@@ -273,10 +273,6 @@
     - id: ui-trajectory
       name: '@deepseek-ai/dsh-client-ui-trajectory'
 
-    # Floating whale: a draggable frame overlay with session actions.
-    - id: ui-whale
-      name: '@deepseek-ai/dsh-client-ui-whale'
-
 # ── the agent plane moves behind agent presets ─────────────────────────────
 #
 # Every row below composes what ONE agent contributes to the host registries:
