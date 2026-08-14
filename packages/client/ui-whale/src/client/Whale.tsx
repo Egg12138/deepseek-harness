@@ -8,7 +8,10 @@ import { useRef, useState } from 'react'
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
 import clsx from 'clsx'
+import type { SessionProjectionMap } from '@deepseek-ai/dsh-client-runtime/client'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type {} from '@deepseek-ai/dsh-session-stats/client'
+import type { ContextPressureProjection, TokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
 import css from './Whale.module.css'
 
 /** Registrant inject face: the New Session action backed by the workspaces service. */
@@ -40,6 +43,93 @@ interface DragState {
 /** Sprite bounding size in px (the container is square). */
 const SPRITE_SIZE = 64
 
+/** One stat chip rendered in a side column. */
+interface StatChip {
+  /** Stable render key and displayed label. */
+  label: string
+  /** Pre-formatted display value. */
+  value: string
+  /** Hover-only tier: hidden until the whale is hovered. */
+  secondary: boolean
+}
+
+/** Both side-rail chip columns (primary tier plus hover-only extras). */
+interface WhaleStats {
+  left: StatChip[]
+  right: StatChip[]
+}
+
+/** Compact token count: 517 / 12.2K / 1.2M (one decimal under three digits). */
+function formatTokens(n: number): string {
+  const scaled = (v: number): string => v >= 100 ? String(Math.round(v)) : String(Math.round(v * 10) / 10)
+  if (n < 1000) return String(n)
+  if (n < 1_000_000) return `${scaled(n / 1000)}K`
+  return `${scaled(n / 1_000_000)}M`
+}
+
+/** Compact duration: 45.2s under a minute, 2m42s from there on. */
+function formatDuration(ms: number): string {
+  const s = ms / 1000
+  if (s < 60) return `${Math.round(s * 10) / 10}s`
+  const whole = Math.round(s)
+  return `${Math.floor(whole / 60)}m${whole % 60}s`
+}
+
+/** Cache-hit share of the three disjoint prompt-side billing buckets; null while unbilled. */
+function cacheHitPercent(usage: TokenUsageProjection): number | null {
+  const denominator = usage.uncachedInputTokens + usage.cacheReadTokens + usage.cacheWriteTokens
+  return denominator === 0
+    ? null
+    : Math.round(usage.cacheReadTokens / denominator * 100)
+}
+
+/** Approximate context occupancy percent; null until pressure and capacity are both known. */
+function contextOccupancy(pressure: ContextPressureProjection | undefined): number | null {
+  const used = pressure?.projectedTokens ?? pressure?.pressureTokens
+  if (used === undefined || pressure?.contextWindow === undefined) return null
+  return Math.min(100, Math.round(used / pressure.contextWindow * 100))
+}
+
+/**
+ * Build the left/right stat columns from the current session's projection
+ * baseline. Primary chips are always visible; secondary chips are the
+ * hover-only extras. Returns null while the session has no projection baseline.
+ * @param p - the current session's projection values (absent when no session).
+ */
+function deriveStats(p: Readonly<Partial<SessionProjectionMap>> | undefined): WhaleStats | null {
+  if (p === undefined) return null
+  const stats = p.sessionStats
+  const usage = p.tokenUsage
+  const occupancy = contextOccupancy(p.contextPressure)
+  const hit = usage === undefined ? null : cacheHitPercent(usage)
+
+  const left: StatChip[] = []
+  const right: StatChip[] = []
+  if (stats !== undefined) {
+    left.push({ label: '步骤', value: String(stats.steps), secondary: false })
+  }
+  if (occupancy !== null) {
+    left.push({ label: '上下文', value: `${occupancy}%`, secondary: false })
+  }
+  if (hit !== null) {
+    right.push({ label: '缓存', value: `${hit}%`, secondary: false })
+  }
+  if (usage !== undefined) {
+    right.push({ label: '输出', value: formatTokens(usage.outputTokens), secondary: false })
+  }
+  if (stats !== undefined) {
+    left.push({ label: '轮次', value: String(stats.turns), secondary: true })
+    left.push({ label: '模型', value: formatDuration(stats.llmMs), secondary: true })
+    right.push({ label: '工具', value: formatDuration(stats.toolMs), secondary: true })
+    if (stats.ttftSteps > 0) {
+      right.push({ label: '首字', value: formatDuration(stats.ttftMs / stats.ttftSteps), secondary: true })
+    }
+  }
+
+  if (left.length === 0 && right.length === 0) return null
+  return { left, right }
+}
+
 /**
  * Render the draggable whale. Position is in-memory only (resets to the
  * anchored corner on reload); `running` drives the active/idle pose.
@@ -54,6 +144,10 @@ export function Whale({ useSessions, newSession }: WhaleProps) {
   const running = useSessions((s) => {
     const id = s.current
     return id && s.byId[id] ? s.byId[id].running : false
+  })
+  const projections = useSessions((s) => {
+    const id = s.current
+    return id && s.byId[id] ? s.byId[id].projectionValues : undefined
   })
 
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
@@ -148,6 +242,7 @@ export function Whale({ useSessions, newSession }: WhaleProps) {
   const style: CSSProperties | undefined = pos === null
     ? undefined
     : { left: `${pos.x}px`, top: `${pos.y}px` }
+  const stats = deriveStats(projections)
 
   return createPortal(
     <div
@@ -162,6 +257,26 @@ export function Whale({ useSessions, newSession }: WhaleProps) {
       onDoubleClick={onDoubleClick}
     >
       {sessionTitle !== undefined && <div className={css.bubble}>{sessionTitle}</div>}
+      {stats !== null && (
+        <>
+          <div className={css.statsLeft}>
+            {stats.left.map(chip => (
+              <span key={chip.label} className={clsx(css.chip, chip.secondary && css.chipSecondary)}>
+                <span className={css.chipLabel}>{chip.label}</span>
+                <span className={css.chipValue}>{chip.value}</span>
+              </span>
+            ))}
+          </div>
+          <div className={css.statsRight}>
+            {stats.right.map(chip => (
+              <span key={chip.label} className={clsx(css.chip, chip.secondary && css.chipSecondary)}>
+                <span className={css.chipLabel}>{chip.label}</span>
+                <span className={css.chipValue}>{chip.value}</span>
+              </span>
+            ))}
+          </div>
+        </>
+      )}
       <div className={css.controls} onPointerDown={(e) => { e.stopPropagation() }}>
         <button type="button" className={css.btn} aria-label="New session" title="New session" onClick={newSession}>
           ➕
