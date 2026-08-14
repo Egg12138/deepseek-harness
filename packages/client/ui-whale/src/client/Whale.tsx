@@ -116,10 +116,10 @@ function contextSeverity(u: number): number {
   return 1 - (1 - THRESHOLD_SEVERITY) * 2 ** (-overshoot / SEVERITY_HALF_LIFE)
 }
 
-/** Health-bar hue sweep: green (0 severity) → amber → red (1 severity), dark enough for white text. */
+/** Severity tint: azure (0 severity, matching the whale blue) → red (1 severity), at reduced opacity. */
 function severityColor(severity: number): string {
-  const hue = Math.round(130 * (1 - severity))
-  return `hsl(${hue} 68% 40%)`
+  const hue = Math.round(210 * (1 - severity))
+  return `hsla(${hue} 85% 55% / 0.3)`
 }
 
 /**
@@ -174,8 +174,8 @@ function ContextPill({ percent }: { percent: number }) {
   const background = severityColor(contextSeverity(percent / 100))
   return (
     <span className={css.ctx} style={{ background }} title={`上下文占用 ${percent}%`}>
-      <span className={css.ctxLabel}>上下文</span>
-      <span className={css.ctxValue}>{percent}%</span>
+      <span className={css.chipLabel}>上下文</span>
+      <span className={css.chipValue}>{percent}%</span>
     </span>
   )
 }
