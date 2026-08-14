@@ -57,6 +57,8 @@ interface StatChip {
 interface WhaleStats {
   left: StatChip[]
   right: StatChip[]
+  /** Context-occupancy bar (always visible); null until pressure and capacity are both known. */
+  context: { percent: number } | null
 }
 
 /** Compact token count: 517 / 12.2K / 1.2M (one decimal under three digits). */
@@ -90,6 +92,51 @@ function contextOccupancy(pressure: ContextPressureProjection | undefined): numb
   return Math.min(100, Math.round(used / pressure.contextWindow * 100))
 }
 
+/** Context-alert threshold as a fraction of the route capacity (0..1). */
+const CONTEXT_ALERT_THRESHOLD = 0.4
+/** Severity at the threshold: mild, so the ramp stays gentle below it. */
+const THRESHOLD_SEVERITY = 0.4
+/** Occupancy fraction past the threshold that halves the remaining severity headroom. */
+const SEVERITY_HALF_LIFE = 0.1
+
+/**
+ * Non-linear context severity: linear (mild) at or below the alert threshold,
+ * then an exponential approach to critical above it. The two terms meet at the
+ * threshold, so the curve is continuous; each `SEVERITY_HALF_LIFE` of extra
+ * occupancy halves the headroom to critical.
+ * @param u - context occupancy as a fraction (0..1).
+ * @returns severity in 0..1.
+ */
+function contextSeverity(u: number): number {
+  const clamped = Math.min(1, Math.max(0, u))
+  if (clamped <= CONTEXT_ALERT_THRESHOLD) {
+    return (clamped / CONTEXT_ALERT_THRESHOLD) * THRESHOLD_SEVERITY
+  }
+  const overshoot = clamped - CONTEXT_ALERT_THRESHOLD
+  return 1 - (1 - THRESHOLD_SEVERITY) * 2 ** (-overshoot / SEVERITY_HALF_LIFE)
+}
+
+/** Health-bar hue sweep: green (0 severity) → amber → red (1 severity). */
+function severityColor(severity: number): string {
+  const hue = Math.round(130 * (1 - severity))
+  return `hsl(${hue} 72% 46%)`
+}
+
+/**
+ * Full-width gradient whose stop positions encode the non-linear severity
+ * curve. Built once; the fill clips it to the current occupancy so the color
+ * at the leading edge reflects severity(occupancy), not raw occupancy.
+ */
+const CONTEXT_GRADIENT = (() => {
+  const stops: string[] = []
+  const steps = 24
+  for (let i = 0; i <= steps; i++) {
+    const u = i / steps
+    stops.push(`${severityColor(contextSeverity(u))} ${(u * 100).toFixed(1)}%`)
+  }
+  return `linear-gradient(to right, ${stops.join(', ')})`
+})()
+
 /**
  * Build the left/right stat columns from the current session's projection
  * baseline. Primary chips are always visible; secondary chips are the
@@ -108,9 +155,6 @@ function deriveStats(p: Readonly<Partial<SessionProjectionMap>> | undefined): Wh
   if (stats !== undefined) {
     left.push({ label: '步骤', value: String(stats.steps), secondary: false })
   }
-  if (occupancy !== null) {
-    left.push({ label: '上下文', value: `${occupancy}%`, secondary: false })
-  }
   if (hit !== null) {
     right.push({ label: '缓存', value: `${hit}%`, secondary: false })
   }
@@ -126,8 +170,34 @@ function deriveStats(p: Readonly<Partial<SessionProjectionMap>> | undefined): Wh
     }
   }
 
-  if (left.length === 0 && right.length === 0) return null
-  return { left, right }
+  if (left.length === 0 && right.length === 0 && occupancy === null) return null
+  return { left, right, context: occupancy === null ? null : { percent: occupancy } }
+}
+
+/** Render one text chip (label + value). */
+function StatChipView({ chip }: { chip: StatChip }) {
+  return (
+    <span className={clsx(css.chip, chip.secondary && css.chipSecondary)}>
+      <span className={css.chipLabel}>{chip.label}</span>
+      <span className={css.chipValue}>{chip.value}</span>
+    </span>
+  )
+}
+
+/** Render the context-occupancy bar with its non-linear severity gradient. */
+function ContextBar({ percent }: { percent: number }) {
+  return (
+    <span className={css.ctx} title={`上下文占用 ${percent}%`}>
+      <span className={css.chipLabel}>上下文</span>
+      <span className={css.ctxTrack}>
+        <span className={css.ctxClip} style={{ width: `${percent}%` }}>
+          <span className={css.ctxFill} style={{ background: CONTEXT_GRADIENT }} />
+        </span>
+        <span className={css.ctxTick} style={{ left: `${CONTEXT_ALERT_THRESHOLD * 100}%` }} />
+      </span>
+      <span className={css.ctxPct}>{percent}%</span>
+    </span>
+  )
 }
 
 /**
@@ -269,19 +339,20 @@ export function Whale({ useSessions, newSession }: WhaleProps) {
       {stats !== null && (
         <>
           <div className={css.statsLeft}>
-            {stats.left.map(chip => (
-              <span key={chip.label} className={clsx(css.chip, chip.secondary && css.chipSecondary)}>
-                <span className={css.chipLabel}>{chip.label}</span>
-                <span className={css.chipValue}>{chip.value}</span>
-              </span>
+            {stats.left.filter(chip => !chip.secondary).map(chip => (
+              <StatChipView key={chip.label} chip={chip} />
+            ))}
+            {stats.context !== null && <ContextBar percent={stats.context.percent} />}
+            {stats.left.filter(chip => chip.secondary).map(chip => (
+              <StatChipView key={chip.label} chip={chip} />
             ))}
           </div>
           <div className={css.statsRight}>
-            {stats.right.map(chip => (
-              <span key={chip.label} className={clsx(css.chip, chip.secondary && css.chipSecondary)}>
-                <span className={css.chipLabel}>{chip.label}</span>
-                <span className={css.chipValue}>{chip.value}</span>
-              </span>
+            {stats.right.filter(chip => !chip.secondary).map(chip => (
+              <StatChipView key={chip.label} chip={chip} />
+            ))}
+            {stats.right.filter(chip => chip.secondary).map(chip => (
+              <StatChipView key={chip.label} chip={chip} />
             ))}
           </div>
         </>
