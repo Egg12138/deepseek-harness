@@ -75,12 +75,27 @@
   background: var(--dsw-alias-button-floating-hover, #f2f3f5);
 }
 
-.bubble {
+.caption {
   position: absolute;
   left: 50%;
   bottom: calc(100% + 36px);
   transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   max-width: 240px;
+  pointer-events: none;
+}
+
+.caption::after {
+  content: '';
+  border: 6px solid transparent;
+  border-top-color: var(--dsw-alias-bg-overlay, #fff);
+  margin-top: -2px;
+}
+
+.bubble {
+  max-width: 100%;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -91,18 +106,19 @@
   padding: 6px 10px;
   font-size: 12px;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
-  pointer-events: none;
   user-select: text;
 }
 
-.bubble::after {
-  content: '';
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  border: 6px solid transparent;
-  border-top-color: var(--dsw-alias-bg-overlay, #fff);
+.cwd {
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 2px 12px 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--dsw-alias-label-secondary, rgba(0, 0, 0, 0.55));
+  user-select: text;
 }
 
 .statsLeft,
