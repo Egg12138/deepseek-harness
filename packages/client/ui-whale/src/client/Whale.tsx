@@ -116,26 +116,11 @@ function contextSeverity(u: number): number {
   return 1 - (1 - THRESHOLD_SEVERITY) * 2 ** (-overshoot / SEVERITY_HALF_LIFE)
 }
 
-/** Health-bar hue sweep: green (0 severity) → amber → red (1 severity). */
+/** Health-bar hue sweep: green (0 severity) → amber → red (1 severity), dark enough for white text. */
 function severityColor(severity: number): string {
   const hue = Math.round(130 * (1 - severity))
-  return `hsl(${hue} 72% 46%)`
+  return `hsl(${hue} 68% 40%)`
 }
-
-/**
- * Full-width gradient whose stop positions encode the non-linear severity
- * curve. Built once; the fill clips it to the current occupancy so the color
- * at the leading edge reflects severity(occupancy), not raw occupancy.
- */
-const CONTEXT_GRADIENT = (() => {
-  const stops: string[] = []
-  const steps = 24
-  for (let i = 0; i <= steps; i++) {
-    const u = i / steps
-    stops.push(`${severityColor(contextSeverity(u))} ${(u * 100).toFixed(1)}%`)
-  }
-  return `linear-gradient(to right, ${stops.join(', ')})`
-})()
 
 /**
  * Build the left/right stat columns from the current session's projection
@@ -184,18 +169,13 @@ function StatChipView({ chip }: { chip: StatChip }) {
   )
 }
 
-/** Render the context-occupancy bar with its non-linear severity gradient. */
-function ContextBar({ percent }: { percent: number }) {
+/** Render the context pill, colored by non-linear severity (content-sized, no fixed track). */
+function ContextPill({ percent }: { percent: number }) {
+  const background = severityColor(contextSeverity(percent / 100))
   return (
-    <span className={css.ctx} title={`上下文占用 ${percent}%`}>
-      <span className={css.chipLabel}>上下文</span>
-      <span className={css.ctxTrack}>
-        <span className={css.ctxClip} style={{ width: `${percent}%` }}>
-          <span className={css.ctxFill} style={{ background: CONTEXT_GRADIENT }} />
-        </span>
-        <span className={css.ctxTick} style={{ left: `${CONTEXT_ALERT_THRESHOLD * 100}%` }} />
-      </span>
-      <span className={css.ctxPct}>{percent}%</span>
+    <span className={css.ctx} style={{ background }} title={`上下文占用 ${percent}%`}>
+      <span className={css.ctxLabel}>上下文</span>
+      <span className={css.ctxValue}>{percent}%</span>
     </span>
   )
 }
@@ -342,7 +322,7 @@ export function Whale({ useSessions, newSession }: WhaleProps) {
             {stats.left.filter(chip => !chip.secondary).map(chip => (
               <StatChipView key={chip.label} chip={chip} />
             ))}
-            {stats.context !== null && <ContextBar percent={stats.context.percent} />}
+            {stats.context !== null && <ContextPill percent={stats.context.percent} />}
             {stats.left.filter(chip => chip.secondary).map(chip => (
               <StatChipView key={chip.label} chip={chip} />
             ))}
