@@ -105,6 +105,61 @@
   border-top-color: var(--dsw-alias-bg-overlay, #fff);
 }
 
+.statsLeft,
+.statsRight {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.statsLeft {
+  right: calc(100% + 12px);
+  align-items: flex-end;
+}
+
+.statsRight {
+  left: calc(100% + 12px);
+  align-items: flex-start;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  white-space: nowrap;
+  background: var(--dsw-alias-bg-overlay, #fff);
+  color: var(--dsw-alias-label-primary, #111);
+  border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1));
+  border-radius: 10px;
+  padding: 3px 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+.chipLabel {
+  color: var(--dsw-alias-label-secondary, rgba(0, 0, 0, 0.55));
+  font-size: 10px;
+}
+
+.chipValue {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.chipSecondary {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.hover .chipSecondary {
+  opacity: 1;
+}
+
 .dragging .controls {
   opacity: 0;
   pointer-events: none;
