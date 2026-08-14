@@ -7,11 +7,12 @@ current session title and its working directory, and exposes hover controls for
 New Session and Hide.
 
 Flanking the whale are two chip columns fed by the host's session projections:
-the always-visible tier shows steps, context occupancy, cache-hit rate, and
-output tokens, while hovering reveals turns, model/tool wall time, and average
-first-token latency. All figures are read-only presentation over the
-`sessionStats` / `tokenUsage` / `contextPressure` projections — the whale
-reaches no model request or session log.
+the always-visible tier shows steps, a context-occupancy bar whose color ramps
+non-linearly (mild green below a 40% alert threshold, then rapidly toward red),
+cache-hit rate, and output tokens, while hovering reveals turns, model/tool
+wall time, and average first-token latency. All figures are read-only
+presentation over the `sessionStats` / `tokenUsage` / `contextPressure`
+projections — the whale reaches no model request or session log.
 
 ## Model Experience
 
