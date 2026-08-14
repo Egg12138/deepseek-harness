@@ -1,0 +1,206 @@
+.whale {
+  position: fixed;
+  z-index: 1000;
+  pointer-events: auto;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+.anchored {
+  left: 32px;
+  bottom: 28px;
+}
+
+.sprite {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  cursor: grab;
+  font-size: 64px;
+  line-height: 1;
+  animation: whaleBob 6s ease-in-out infinite;
+  filter: drop-shadow(0 6px 14px rgba(15, 17, 21, 0.25));
+}
+
+.idle .sprite {
+  animation: whaleRest 8s ease-in-out infinite;
+}
+
+.zzz {
+  position: absolute;
+  right: -14px;
+  top: -12px;
+  font-size: 18px;
+  line-height: 1;
+  pointer-events: none;
+  animation: whaleZzz 3s ease-in-out infinite;
+}
+
+.controls {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% - 4px);
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+.hover .controls {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: var(--dsw-alias-bg-overlay, #fff);
+  color: var(--dsw-alias-label-primary, #111);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 32px;
+  text-align: center;
+  padding: 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+
+.btn:hover {
+  background: var(--dsw-alias-button-floating-hover, #f2f3f5);
+}
+
+.bubble {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 36px);
+  transform: translateX(-50%);
+  max-width: 240px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: var(--dsw-alias-bg-overlay, #fff);
+  color: var(--dsw-alias-label-primary, #111);
+  border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1));
+  border-radius: 12px;
+  padding: 6px 10px;
+  font-size: 12px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
+  pointer-events: none;
+  user-select: text;
+}
+
+.bubble::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: var(--dsw-alias-bg-overlay, #fff);
+}
+
+.dragging .controls {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.dragging .sprite {
+  animation: none;
+  cursor: grabbing;
+}
+
+.particles {
+  position: absolute;
+  left: 50%;
+  top: -6px;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.particle {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(103, 158, 254, 0.45);
+  border: 1px solid rgba(103, 158, 254, 0.7);
+  animation: bubblePop 1.2s ease-out both;
+}
+
+.reveal {
+  position: fixed;
+  z-index: 1000;
+  left: 32px;
+  bottom: 28px;
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 50%;
+  background: var(--dsw-alias-bg-overlay, #fff);
+  color: var(--dsw-alias-label-primary, #111);
+  opacity: 0.5;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 34px;
+  text-align: center;
+  padding: 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+
+.reveal:hover {
+  opacity: 1;
+}
+
+@keyframes whaleBob {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-4deg);
+  }
+  50% {
+    transform: translateY(-16px) rotate(4deg);
+  }
+}
+
+@keyframes whaleRest {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes whaleZzz {
+  0%,
+  100% {
+    opacity: 0.2;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 0.9;
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes bubblePop {
+  0% {
+    transform: translate(0, 0) scale(0.4);
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate(var(--bx, 0px), -70px) scale(1.1);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sprite {
+    animation: none;
+  }
+}
