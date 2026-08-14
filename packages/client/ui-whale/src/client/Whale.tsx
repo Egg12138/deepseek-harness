@@ -149,6 +149,10 @@ export function Whale({ useSessions, newSession }: WhaleProps) {
     const id = s.current
     return id && s.byId[id] ? s.byId[id].projectionValues : undefined
   })
+  const cwd = useSessions((s) => {
+    const id = s.current
+    return id && s.byId[id] ? s.byId[id].cwd : undefined
+  })
 
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
   const [drag, setDrag] = useState<DragState | null>(null)
@@ -256,7 +260,12 @@ export function Whale({ useSessions, newSession }: WhaleProps) {
       onPointerCancel={onPointerUp}
       onDoubleClick={onDoubleClick}
     >
-      {sessionTitle !== undefined && <div className={css.bubble}>{sessionTitle}</div>}
+      {sessionTitle !== undefined && (
+        <div className={css.caption}>
+          <div className={css.bubble}>{sessionTitle}</div>
+          {cwd !== undefined && <div className={css.cwd} title={cwd}>{cwd}</div>}
+        </div>
+      )}
       {stats !== null && (
         <>
           <div className={css.statsLeft}>

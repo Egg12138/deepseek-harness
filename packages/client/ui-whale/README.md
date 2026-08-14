@@ -3,7 +3,8 @@
 A playful frame overlay: a draggable floating whale registered into the shell's
 `shell.overlay` layer. It rests (🐋 + 💤) while the current session is idle and
 spouts (🐳) while the agent runs, shows a persistent speech bubble with the
-current session title, and exposes hover controls for New Session and Hide.
+current session title and its working directory, and exposes hover controls for
+New Session and Hide.
 
 Flanking the whale are two chip columns fed by the host's session projections:
 the always-visible tier shows steps, context occupancy, cache-hit rate, and
