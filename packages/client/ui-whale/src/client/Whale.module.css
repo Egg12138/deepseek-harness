@@ -186,18 +186,7 @@
   padding: 3px 8px;
   font-size: 11px;
   line-height: 1.4;
-  color: #fff;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
-}
-
-.ctxLabel {
-  font-size: 10px;
-  opacity: 0.9;
-}
-
-.ctxValue {
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
 }
 
 .dragging .controls {
