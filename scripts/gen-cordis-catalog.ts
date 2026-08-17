@@ -383,6 +383,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   SessionTitleObservation: 'session-query.md',
   SessionTitleObservationResult: 'session-query.md',
   SessionTitleProvider: 'session-title.md',
+  SessionTitleRefreshOptions: 'session-title.md',
   SessionTitleSnapshot: 'session-title.md',
   SkillCatalogSnapshot: 'skills.md',
   SkillDefinition: 'skills.md',

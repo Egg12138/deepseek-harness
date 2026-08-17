@@ -1,0 +1,6 @@
+# The command bundle layer is intentionally idempotent with dsh-base: the
+# shipped base already inserts this Host plugin, and this layer makes the
+# package self-describing for profile plugin management without duplicating it.
+- id: command-session-title
+  name: '@deepseek-ai/dsh-command-session-title'
+  disabled: false

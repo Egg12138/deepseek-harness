@@ -8,6 +8,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import { writeSync } from 'node:fs'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
@@ -49,6 +50,16 @@ interface HeadlessIo {
   stderr: { write(chunk: string): unknown }
   /** Request process exit with `code` after the tree disposes. */
   exit(code: number): void
+}
+
+/** Write process-owned output before the launcher starts disposing the tree. */
+function writeOutput(stream: HeadlessIo['stdout'], chunk: string, fd: 1 | 2): void {
+  /* v8 ignore next -- loader smoke exercises process-owned stdio; unit tests inject streams. */
+  if (stream === (fd === 1 ? process.stdout : process.stderr)) {
+    writeSync(fd, chunk)
+    return
+  }
+  stream.write(chunk)
 }
 
 /** The process streams the runner writes to; tests substitute captures. */
@@ -126,9 +137,9 @@ async function run(ctx: Context, task: string, io: HeadlessIo): Promise<void> {
   await agent.whenIdle()
   await sessions.flush(agent.session)
   const outcome = summarize(agent.session.events, firstSeq)
-  io.stdout.write(outcome.text + '\n')
+  writeOutput(io.stdout, outcome.text + '\n', 1)
   if (outcome.reason?.kind === 'error') {
-    io.stderr.write(`dsh: ${outcome.reason.error.code}: ${outcome.reason.error.message}\n`)
+    writeOutput(io.stderr, `dsh: ${outcome.reason.error.code}: ${outcome.reason.error.message}\n`, 2)
   }
   io.exit(outcome.reason?.kind === 'completed' ? 0 : 1)
 }

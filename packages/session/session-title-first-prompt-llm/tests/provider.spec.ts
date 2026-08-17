@@ -9,6 +9,10 @@ import * as providerPlugin from '@deepseek-ai/dsh-session-title-first-prompt-llm
 class RecordingAdapter extends LlmAdapter {
   readonly requests: GenerateOptions[] = []
 
+  override async resolveModel(provider: string, model: string) {
+    return { provider, id: model, name: model, context: { contextWindow: 4_096 } }
+  }
+
   override async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     this.requests.push(options)
     yield { type: 'text-delta', index: 0, text: 'First-message model title' }
@@ -20,7 +24,6 @@ const TITLE_CONFIG = { fallbackMaxWords: 5, fallbackMaxBytes: 40, maxTitleBytes:
 const LLM_CONFIG = {
   targetWords: 5,
   targetCjkCharacters: 10,
-  maxInputBytes: 1_000,
   maxOutputTokens: 32,
   timeoutMs: 1_000,
   provider: 'title-route',
@@ -47,11 +50,12 @@ describe('first-prompt LLM title provider', () => {
     await expect(registered!.generate({
       session: Session.create(SessionId('empty-first-provider')),
       messages: [],
+      cause: 'automatic',
       signal: new AbortController().signal,
     })).rejects.toThrow(/requires one human message/)
   })
 
-  it('always selects only the first eligible human message, including explicit refresh', async () => {
+  it('selects the first message automatically and all messages for an instructed refresh', async () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(SessionStore)
@@ -69,18 +73,22 @@ describe('first-prompt LLM title provider', () => {
       header: { config: { provider: 'main', model: 'main-model' } }, reason: 'initial',
     })
     await settle()
-    session.append('user/message', createUserMessage({
-      content: [{ type: 'text', text: 'second input must be ignored' }], source: { kind: 'user' },
+    const second = session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'second input' }], source: { kind: 'user' },
     }), { surfaceOp: 'append' })
 
-    await ctx.sessionTitle.refresh(session)
+    await ctx.sessionTitle.refresh(session, { instruction: 'Emphasize the second topic.' })
 
     expect(adapter.requests).toHaveLength(2)
-    for (const options of adapter.requests) {
-      const content = options.messages[0]?.content[0]
-      expect(content?.type === 'text' && content.text).toContain('first input')
-      expect(content?.type === 'text' && content.text).not.toContain('second input must be ignored')
-    }
-    expect(ctx.sessionTitle.get(session)).toMatchObject({ messageSeqs: [first.seq] })
+    const automatic = adapter.requests[0]?.messages[0]?.content[0]
+    expect(automatic?.type === 'text' && automatic.text).toContain('first input')
+    expect(automatic?.type === 'text' && automatic.text).not.toContain('second input')
+    const refreshed = adapter.requests[1]?.messages[0]?.content[0]
+    expect(refreshed?.type === 'text' && refreshed.text).toContain('first input')
+    expect(refreshed?.type === 'text' && refreshed.text).toContain('second input')
+    expect(refreshed?.type === 'text' && refreshed.text).toContain('Emphasize the second topic.')
+    expect(session.events.findLast(event => event.type === 'session/title-llm-request')?.data.messages)
+      .toEqual(adapter.requests[1]?.messages)
+    expect(ctx.sessionTitle.get(session)).toMatchObject({ messageSeqs: [first.seq, second.seq] })
   })
 })

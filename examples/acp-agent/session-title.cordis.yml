@@ -12,7 +12,6 @@
             config:
               targetWords: 5
               targetCjkCharacters: 10
-              maxInputBytes: 4096
               maxOutputTokens: 32
               timeoutMs: 5000
               provider: deepseek-official

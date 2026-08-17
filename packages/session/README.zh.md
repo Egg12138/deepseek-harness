@@ -35,8 +35,9 @@
 |---|---|---|
 | [`session-title/`](session-title/README.md) | 负责标题状态、回退行为、提供方注册与刷新 | `ctx.sessionTitle` |
 | [`session-title-llm/`](session-title-llm/README.md) | 提供共享的模型标题生成能力 | — |
-| [`session-title-first-prompt-llm/`](session-title-first-prompt-llm/README.md) | 根据第一条合格的人类消息生成会话标题 | 注册到 `ctx.sessionTitle` |
+| [`session-title-first-prompt-llm/`](session-title-first-prompt-llm/README.md) | 自动根据首条提示词命名，显式刷新则使用全部提示词 | 注册到 `ctx.sessionTitle` |
 | [`session-title-all-prompts-llm/`](session-title-all-prompts-llm/README.md) | 根据所有合格的人类消息生成会话标题 | 注册到 `ctx.sessionTitle` |
+| [`command-session-title/`](command-session-title/README.md) | 将提供方驱动的重新生成暴露为 `/rename [instruction]` | 注册到 `ctx.commands` |
 
 部署可以注册一个模型驱动提供方；未注册时，服务仍保留确定性回退机制。
 
@@ -49,4 +50,4 @@
 | [`session-telemetry/`](session-telemetry/README.md) | 定义捕获、脱敏、投影，以及实时或按需后端投递。 |
 | [`session-telemetry-otel/`](session-telemetry-otel/README.md) | 通过 OpenTelemetry 日志以 `FULL`、`FEEDBACK_ONLY` 或 `DISABLED` 模式投递遥测。 |
 
-子系统参考：[persistence.md](../../docs/subsystems/persistence.md)、[session-projection.md](../../docs/subsystems/session-projection.md)、[session-title.md](../../docs/subsystems/session-title.md) 与 [session-telemetry.md](../../docs/subsystems/session-telemetry.md)。同一时间只允许一个标题提供方注册；demo 主干挂载回退服务，两个模型提供方都留在默认组合之外。
+子系统参考：[persistence.md](../../docs/subsystems/persistence.md)、[session-projection.md](../../docs/subsystems/session-projection.md)、[session-title.md](../../docs/subsystems/session-title.md) 与 [session-telemetry.md](../../docs/subsystems/session-telemetry.md)。同一时间只允许一个标题提供方注册；base bundle 会挂载首提示词提供方与 `/rename` 命令，其他组合也可以显式选择任一提供方。

@@ -112,7 +112,7 @@ describe('SessionTitleService Provider lifecycle', () => {
     expect(ctx.sessionTitle.get(parent)?.title).toBe('Inherited title prompt')
   })
 
-  it('runs a first-prompt provider once after the routed request and retries only through refresh', async () => {
+  it('runs a first-prompt provider once automatically and refreshes from all messages with an instruction', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
     await ctx.plugin(SessionTitleService, CONFIG)
@@ -144,6 +144,7 @@ describe('SessionTitleService Provider lifecycle', () => {
     expect(requests).toHaveLength(1)
     expect(requests[0]).toMatchObject({
       session,
+      cause: 'automatic',
       messages: [{ seq: first.seq, text: 'Explain asynchronous title generation' }],
       route: { provider: 'main-route', model: 'chat-model' },
     })
@@ -162,8 +163,14 @@ describe('SessionTitleService Provider lifecycle', () => {
     await settle()
     expect(requests).toHaveLength(1)
 
-    await ctx.sessionTitle.refresh(session)
+    await ctx.sessionTitle.refresh(session, {
+      instruction: 'Focus on cancellation behavior.',
+    })
     expect(requests).toHaveLength(2)
+    expect(requests[1]).toMatchObject({
+      cause: 'refresh',
+      instruction: 'Focus on cancellation behavior.',
+    })
     expect(requests[1]?.messages.map(message => message.seq)).toEqual([first.seq, second.seq])
   })
 

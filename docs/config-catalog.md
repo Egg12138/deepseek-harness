@@ -654,7 +654,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/bundle/headless/src/index.ts:31`](../packages/bundle/headless/src/index.ts)
+Source: [`packages/bundle/headless/src/index.ts:32`](../packages/bundle/headless/src/index.ts)
 
 <a id="deepseek-aidsh-hooks-claude-code"></a>
 
@@ -1796,7 +1796,7 @@ export type Config = SessionTitleLlmConfig
 
 Depends on: [`SessionTitleLlmConfig`](../packages/session/session-title-llm/src/index.ts)
 
-Source: [`packages/session/session-title-all-prompts-llm/src/index.ts:15`](../packages/session/session-title-all-prompts-llm/src/index.ts)
+Source: [`packages/session/session-title-all-prompts-llm/src/index.ts:16`](../packages/session/session-title-all-prompts-llm/src/index.ts)
 
 <a id="deepseek-aidsh-session-title-first-prompt-llm"></a>
 
@@ -1811,7 +1811,7 @@ export type Config = SessionTitleLlmConfig
 
 Depends on: [`SessionTitleLlmConfig`](../packages/session/session-title-llm/src/index.ts)
 
-Source: [`packages/session/session-title-first-prompt-llm/src/index.ts:15`](../packages/session/session-title-first-prompt-llm/src/index.ts)
+Source: [`packages/session/session-title-first-prompt-llm/src/index.ts:16`](../packages/session/session-title-first-prompt-llm/src/index.ts)
 
 <a id="deepseek-aidsh-settings-file"></a>
 
@@ -3063,6 +3063,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-command-compact` — requires `commands` · `compaction` ([`packages/compaction/command-compact/src/index.ts`](../packages/compaction/command-compact/src/index.ts))
 - `@deepseek-ai/dsh-command-feedback` — requires `commands` ([`packages/feedback/command-feedback/src/index.ts`](../packages/feedback/command-feedback/src/index.ts))
 - `@deepseek-ai/dsh-command-goal` — requires `commands` · `goals` ([`packages/goal/command-goal/src/index.ts`](../packages/goal/command-goal/src/index.ts))
+- `@deepseek-ai/dsh-command-session-title` — requires `commands` · `sessionTitle` ([`packages/session/command-session-title/src/index.ts`](../packages/session/command-session-title/src/index.ts))
 - `@deepseek-ai/dsh-commands` ([`packages/interaction/commands/src/index.ts`](../packages/interaction/commands/src/index.ts))
 - `@deepseek-ai/dsh-cordis-client-runner` ([`packages/extensions/cordis-client-runner/src/index.ts`](../packages/extensions/cordis-client-runner/src/index.ts))
 - `@deepseek-ai/dsh-fs-e2b` — requires `e2b` ([`packages/e2b/fs-e2b/src/index.ts`](../packages/e2b/fs-e2b/src/index.ts))

@@ -18,6 +18,7 @@ class CliMockAdapter extends LlmAdapter {
       provider,
       id: model,
       name: model,
+      context: { contextWindow: 32_768 },
       reasoning: {
         efforts: [
           { id: OFF, name: 'Off' },
@@ -29,6 +30,15 @@ class CliMockAdapter extends LlmAdapter {
   }
 
   async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+    if (options.purpose === 'session-title') {
+      const title = 'Headless profile round trip'
+      yield { type: 'block-start', index: 0, blockType: 'text' }
+      yield { type: 'text-delta', index: 0, text: title }
+      yield { type: 'block-end', index: 0, block: { type: 'text', text: title } }
+      yield { type: 'usage', usage: { inputTokens: 10, outputTokens: 5 } }
+      yield { type: 'finish', reason: { kind: 'stop' } }
+      return
+    }
     if (process.env.DSH_CLI_MOCK_FAILURE === '1') {
       yield { type: 'finish', reason: { kind: 'error', failure: { code: 'SERVER', message: 'CLI mock provider failed' } } }
       return

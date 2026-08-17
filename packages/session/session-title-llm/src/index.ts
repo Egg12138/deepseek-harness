@@ -15,17 +15,17 @@ import {
 } from '@deepseek-ai/dsh-session-title'
 import type {
   SessionTitleAutomaticMode,
+  SessionTitleMessage,
   SessionTitleModelProvenance,
   SessionTitleProviderRequest,
   SessionTitleProviderResult,
-  SessionTitleUserMessage,
 } from '@deepseek-ai/dsh-session-title'
 
 /** Exact model-visible request recorded before one auxiliary title dispatch. */
 export interface SessionTitleLlmRequestEventData {
   /** Registered title-provider identity responsible for the request. */
   readonly titleProvider: SessionTitleProviderId
-  /** Exact human `user/message` seqs represented in `messages`. */
+  /** Exact source surface seqs represented in `messages`. */
   readonly messageSeqs: number[]
   /** Exact auxiliary LLM route. */
   readonly route: SessionTitleModelProvenance
@@ -53,8 +53,6 @@ export interface SessionTitleLlmConfig {
   readonly targetWords: number
   /** Target character count for Chinese, Japanese, or Korean titles. */
   readonly targetCjkCharacters: number
-  /** Maximum UTF-8 bytes in the final JSON-framed user prompt. */
-  readonly maxInputBytes: number
   /** Auxiliary generation output-token cap. */
   readonly maxOutputTokens: number
   /** End-to-end auxiliary request deadline in milliseconds. */
@@ -72,7 +70,6 @@ export interface ResolvedSessionTitleLlmConfig extends SessionTitleLlmConfig {}
 export const SessionTitleLlmConfigFields = {
   targetWords: z.number().step(1).min(1).required(),
   targetCjkCharacters: z.number().step(1).min(1).required(),
-  maxInputBytes: z.number().step(1).min(1).required(),
   maxOutputTokens: z.number().step(1).min(1).required(),
   timeoutMs: z.number().step(1).min(1).max(MAX_TIMER_DELAY_MS).required(),
   provider: z.string(),
@@ -86,7 +83,6 @@ export const SessionTitleLlmConfigSchema: z<SessionTitleLlmConfig> = z.object(Se
 const CONFIG_KEYS: ReadonlySet<string> = new Set([
   'targetWords',
   'targetCjkCharacters',
-  'maxInputBytes',
   'maxOutputTokens',
   'timeoutMs',
   'provider',
@@ -118,7 +114,6 @@ export function resolveSessionTitleLlmConfig(
   }
   assertPositiveInteger('targetWords', value.targetWords)
   assertPositiveInteger('targetCjkCharacters', value.targetCjkCharacters)
-  assertPositiveInteger('maxInputBytes', value.maxInputBytes)
   assertPositiveInteger('maxOutputTokens', value.maxOutputTokens)
   assertPositiveInteger('timeoutMs', value.timeoutMs)
   if (value.timeoutMs > MAX_TIMER_DELAY_MS) {
@@ -139,8 +134,18 @@ export function resolveSessionTitleLlmConfig(
 
 /** Select the provider-owned message subset from one fixed service revision. */
 export type SessionTitleLlmMessageSelector = (
-  messages: readonly SessionTitleUserMessage[],
-) => readonly SessionTitleUserMessage[]
+  request: SessionTitleProviderRequest,
+) => readonly SessionTitleMessage[]
+
+/**
+ * Convert the provider's human-message view to exact model-visible messages.
+ * @param request - title-provider request with an optional derived refresh surface.
+ * @returns model-visible messages paired with their durable source seqs.
+ */
+export function sessionTitleLlmMessages(request: SessionTitleProviderRequest): SessionTitleMessage[] {
+  if (request.cause === 'refresh' && request.derivedMessages !== undefined) return [...request.derivedMessages]
+  return request.messages.map(({ seq, message }) => ({ seq, message }))
+}
 
 /**
  * Register one model-backed provider through the shared configuration and call policy.
@@ -163,7 +168,7 @@ export function registerSessionTitleLlmProvider(
     id: titleProvider,
     automatic,
     async generate(request) {
-      return generateSessionTitleWithLlm(ctx, resolved, request, selectMessages(request.messages), titleProvider)
+      return generateSessionTitleWithLlm(ctx, resolved, request, selectMessages(request), titleProvider)
     },
   })
 }
@@ -193,8 +198,47 @@ function systemPrompt(config: ResolvedSessionTitleLlmConfig): string {
 }
 
 /** Frame exact messages as JSON so user text cannot break structural delimiters. */
-function frameMessages(messages: readonly SessionTitleUserMessage[]): string {
-  return `Generate the session title from this JSON array of human messages:\n${JSON.stringify(messages)}`
+function frameMessages(messages: readonly SessionTitleMessage[], instruction?: string): string {
+  const framed = `Generate the session title from this JSON array of model-visible messages:\n${JSON.stringify(messages.map(({ message }) => message))}`
+  if (instruction === undefined) return framed
+  return `${framed}\nFollow this additional JSON-encoded user instruction when choosing the title:\n${JSON.stringify(instruction)}`
+}
+
+const CHARS_PER_TOKEN = 4
+const STRUCTURAL_TOKENS = 4
+
+/** Estimate one model-visible UTF-8 string plus its structural framing. */
+function estimateFramedTokens(text: string): number {
+  return Math.ceil(Buffer.byteLength(text, 'utf8') / CHARS_PER_TOKEN) + STRUCTURAL_TOKENS
+}
+
+/** Keep the largest newest-message suffix within the route's token budget. */
+function retainMessages(
+  messages: readonly SessionTitleMessage[],
+  instruction: string | undefined,
+  inputTokenBudget: number,
+): readonly SessionTitleMessage[] {
+  if (estimateFramedTokens(frameMessages(messages, instruction)) <= inputTokenBudget) {
+    return messages
+  }
+  let low = 0
+  let high = messages.length - 1
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2)
+    const candidate = messages.slice(middle)
+    if (estimateFramedTokens(frameMessages(candidate, instruction)) <= inputTokenBudget) {
+      high = middle
+    } else {
+      low = middle + 1
+    }
+  }
+  const retained = messages.slice(low)
+  if (estimateFramedTokens(frameMessages(retained, instruction)) > inputTokenBudget) {
+    throw new Error(
+      `session-title-llm: current context needs more than the ${inputTokenBudget}-token title input budget`,
+    )
+  }
+  return retained
 }
 
 /** Translate terminal finish reasons into an auxiliary-call failure. */
@@ -230,24 +274,32 @@ export async function generateSessionTitleWithLlm(
   ctx: Context,
   config: ResolvedSessionTitleLlmConfig,
   request: SessionTitleProviderRequest,
-  selectedMessages: readonly SessionTitleUserMessage[],
+  selectedMessages: readonly SessionTitleMessage[],
   titleProvider: SessionTitleProviderId,
 ): Promise<SessionTitleProviderResult> {
   request.signal.throwIfAborted()
   if (selectedMessages.length === 0) {
     throw new Error('session-title-llm: at least one source message is required')
   }
-  const framedInput = frameMessages(selectedMessages)
-  const inputBytes = Buffer.byteLength(framedInput, 'utf8')
-  if (inputBytes > config.maxInputBytes) {
-    throw new Error(`session-title-llm: input is ${inputBytes} bytes, exceeding maxInputBytes ${config.maxInputBytes}`)
-  }
   const route = resolveRoute(config, request)
+  const modelInfo = await ctx.llm.resolveModelInfo(route.provider, route.model, request.signal)
+  const contextWindow = modelInfo.context?.contextWindow
+  if (contextWindow === undefined) {
+    throw new Error(`session-title-llm: model ${route.provider}/${route.model} does not expose contextWindow`)
+  }
+  const system = systemPrompt(config)
+  const inputTokenBudget = contextWindow - config.maxOutputTokens - estimateFramedTokens(system)
+  if (inputTokenBudget <= 0) {
+    throw new Error(
+      `session-title-llm: model ${route.provider}/${route.model} has no token budget after title output and system prompt reservations`,
+    )
+  }
+  const retainedMessages = retainMessages(selectedMessages, request.instruction, inputTokenBudget)
+  const framedInput = frameMessages(retainedMessages, request.instruction)
   const messages: Message[] = [createUserMessage({
     content: [{ type: 'text', text: framedInput }],
     source: { kind: 'plugin', plugin: 'dsh-session-title-llm' },
   })]
-  const system = systemPrompt(config)
   using callDeadline = deadline(request.signal, config.timeoutMs, SESSION_TITLE_TIMEOUT_CODE)
   const options: GenerateOptions = deepFreeze({
     provider: route.provider,
@@ -261,7 +313,7 @@ export async function generateSessionTitleWithLlm(
   })
   request.session.append('session/title-llm-request', {
     titleProvider,
-    messageSeqs: selectedMessages.map(message => message.seq),
+    messageSeqs: retainedMessages.map(message => message.seq),
     route,
     system,
     messages,
@@ -288,7 +340,7 @@ export async function generateSessionTitleWithLlm(
   if (title.length === 0) throw new Error('session-title-llm: title model produced no text')
   return {
     title,
-    messageSeqs: selectedMessages.map(message => message.seq),
+    messageSeqs: retainedMessages.map(message => message.seq),
     model: route,
   }
 }

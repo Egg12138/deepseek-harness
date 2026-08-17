@@ -41,12 +41,12 @@
                   name: Title replay
                   models:
                     - id: title-model
+                      contextWindow: 32768
           - id: session-title-provider
             name: '@deepseek-ai/dsh-session-title-first-prompt-llm'
             config:
               targetWords: 5
               targetCjkCharacters: 10
-              maxInputBytes: 4096
               maxOutputTokens: 32
               timeoutMs: 5000
               provider: title-replay

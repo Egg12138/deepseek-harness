@@ -1,9 +1,10 @@
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { Context, type Fiber } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
 import SessionTitleService, {
   SessionTitleProviderId,
+  deriveSessionTitleMessages,
   type Config,
   type SessionTitleProvider,
   type SessionTitleProviderRequest,
@@ -49,6 +50,68 @@ function appendPrompt(session: ReturnType<Context['sessions']['create']>, text: 
 }
 
 describe('SessionTitleService configuration and refresh boundaries', () => {
+  it('refresh exposes the current derived message surface for title providers', async () => {
+    const ctx = await setup()
+    const session = startSession(ctx, 'derived-refresh')
+    appendPrompt(session, 'before compaction')
+    const summary = appendPrompt(session, 'compacted summary context')
+    const observed: { derivedMessages?: readonly { seq: number; message: unknown }[] }[] = []
+    ctx.sessionTitle.register({
+      id: SessionTitleProviderId('derived-refresh'),
+      automatic: 'first-prompt',
+      async generate(request) {
+        observed.push(request)
+        return { title: 'Derived context title', messageSeqs: [summary.seq] }
+      },
+    })
+
+    await ctx.sessionTitle.refresh(session)
+
+    expect(observed[0]?.derivedMessages?.map(message => message.seq)).toEqual(session.surface.nodes)
+    expect(observed[0]?.derivedMessages?.at(-1)?.message).toEqual(session.deriveMessages().at(-1))
+  })
+
+  it('keeps empty assistant surface nodes out of the derived title input', () => {
+    const session = Session.create(SessionId('derived-empty-assistant'))
+    session.append('turn/start', { turn: 1 })
+    session.append('assistant/message', {
+      turn: 1,
+      step: 1,
+      message: createMessage({
+        role: 'assistant',
+        content: [],
+        source: { kind: 'model', provider: 'mock', model: 'mock' },
+      }),
+      usage: { inputTokens: 1, outputTokens: 0 },
+    }, { surfaceOp: 'append' })
+    expect(deriveSessionTitleMessages(session)).toEqual([])
+  })
+
+  it('refreshes a session whose current surface has no human prompt', async () => {
+    const ctx = await setup()
+    const session = startSession(ctx, 'derived-only-refresh')
+    const assistant = createMessage({
+      role: 'assistant',
+      content: [{ type: 'text', text: 'visible assistant context' }],
+      source: { kind: 'model', provider: 'mock', model: 'mock' },
+    })
+    const event = session.append('assistant/message', {
+      turn: 1,
+      step: 1,
+      message: assistant,
+    }, { surfaceOp: 'append' })
+    ctx.sessionTitle.register({
+      id: SessionTitleProviderId('derived-only-refresh'),
+      automatic: 'first-prompt',
+      async generate(request) {
+        expect(request.derivedMessages?.map(message => message.seq)).toEqual([event.seq])
+        return { title: 'Assistant context title', messageSeqs: [event.seq] }
+      },
+    })
+
+    await expect(ctx.sessionTitle.refresh(session)).resolves.toMatchObject({ title: 'Assistant context title' })
+  })
+
   it('requires explicit positive limits with a fallback cap no larger than the accepted-title cap', () => {
     expect(() => new SessionTitleService(new Context(), undefined as never))
       .toThrow('configuration is required')
@@ -85,7 +148,7 @@ describe('SessionTitleService configuration and refresh boundaries', () => {
       .rejects.toThrow(/not live in this store/)
     const controller = new AbortController()
     controller.abort(new Error('already cancelled'))
-    await expect(withProvider.sessionTitle.refresh(providerEmpty, controller.signal))
+    await expect(withProvider.sessionTitle.refresh(providerEmpty, { signal: controller.signal }))
       .rejects.toThrow('already cancelled')
   })
 
@@ -105,7 +168,7 @@ describe('SessionTitleService configuration and refresh boundaries', () => {
     await settle()
     const controller = new AbortController()
 
-    await expect(ctx.sessionTitle.refresh(session, controller.signal))
+    await expect(ctx.sessionTitle.refresh(session, { signal: controller.signal }))
       .resolves.toMatchObject({ title: 'Explicit title' })
     expect(observed?.route).toBeUndefined()
     expect(observed?.signal.aborted).toBe(false)
@@ -127,7 +190,7 @@ describe('SessionTitleService configuration and refresh boundaries', () => {
     const callerMessage = appendPrompt(callerSession, 'Cancel this refresh')
     await settle()
     const controller = new AbortController()
-    const refresh = callerCtx.sessionTitle.refresh(callerSession, controller.signal)
+    const refresh = callerCtx.sessionTitle.refresh(callerSession, { signal: controller.signal })
     await settle()
     controller.abort(new Error('caller cancelled'))
     callerPending.resolve({ title: 'ignored', messageSeqs: [callerMessage.seq] })

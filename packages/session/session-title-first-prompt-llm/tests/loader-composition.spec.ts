@@ -18,6 +18,10 @@ let context: Context | undefined
 class LoaderAdapter extends LlmAdapter {
   readonly requests: GenerateOptions[] = []
 
+  override async resolveModel(provider: string, model: string) {
+    return { provider, id: model, name: model, context: { contextWindow: 4_096 } }
+  }
+
   override async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     this.requests.push(options)
     yield { type: 'text-delta', index: 0, text: 'Loader composed title' }
@@ -47,7 +51,6 @@ async function loadComposition(): Promise<Context> {
     '  config:',
     '    targetWords: 5',
     '    targetCjkCharacters: 10',
-    '    maxInputBytes: 1000',
     '    maxOutputTokens: 32',
     '    timeoutMs: 1000',
     "    provider: 'title-route'",

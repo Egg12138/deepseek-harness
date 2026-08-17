@@ -9,6 +9,10 @@ import * as providerPlugin from '@deepseek-ai/dsh-session-title-all-prompts-llm'
 class RecordingAdapter extends LlmAdapter {
   readonly requests: GenerateOptions[] = []
 
+  override async resolveModel(provider: string, model: string) {
+    return { provider, id: model, name: model, context: { contextWindow: 4_096 } }
+  }
+
   override async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     this.requests.push(options)
     yield { type: 'text-delta', index: 0, text: 'All messages model title' }
@@ -20,7 +24,6 @@ const TITLE_CONFIG = { fallbackMaxWords: 5, fallbackMaxBytes: 40, maxTitleBytes:
 const LLM_CONFIG = {
   targetWords: 5,
   targetCjkCharacters: 10,
-  maxInputBytes: 1_000,
   maxOutputTokens: 32,
   timeoutMs: 1_000,
 } as const

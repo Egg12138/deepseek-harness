@@ -2,13 +2,13 @@
 
 English | [中文](README.zh.md)
 
-Shared implementation policy for model-backed session-title providers. It resolves the auxiliary route, frames exact selected human messages as JSON, records the exact dispatchable request, applies a language-aware title instruction, enforces input and output budgets, composes timeout and caller cancellation, assembles the stream, and returns normalized text with exact source seqs plus the provider/model route used to generate it.
+Shared implementation policy for model-backed session-title providers. It resolves the auxiliary route and its model context window, frames the selected model-visible messages as JSON, optionally appends JSON-encoded refresh guidance, records the exact dispatchable request, applies a language-aware title instruction, reserves tokens for the title output, system prompt, and JSON/message framing, composes timeout and caller cancellation, assembles the stream, and returns normalized text with exact source seqs plus the provider/model route used to generate it.
 
 This package is a library, not a Cordis plugin. The provider plugins call `registerSessionTitleLlmProvider()` with their cadence and message selector; it validates shared config and delegates each revision to `generateSessionTitleWithLlm()`, so registration, route, prompt, cancellation, and validation behavior cannot drift between them.
 
 ## Route and failure contract
 
-`provider` and `model` overrides are optional but must be supplied together as non-empty strings. Without that pair, the helper uses the exact provider/model route captured from the current session's logged `request/header`; an explicit refresh before any route exists therefore needs overrides. The helper measures the final JSON-framed user prompt, including seq fields, wrappers, and JSON escaping, against `maxInputBytes` before logging or dispatch instead of truncating it. Timeout and caller cancellation are rechecked while consuming the stream and after it completes, so a late successful result cannot be accepted even if an interceptor or adapter ignores abort. Malformed or empty output, tool calls, and non-stop finish reasons also reject; the session-title service decides whether that rejection is an automatic warning or an explicit caller failure.
+`provider` and `model` overrides are optional but must be supplied together as non-empty strings. Without that pair, the helper uses the exact provider/model route captured from the current session's logged `request/header`; an explicit refresh before any route exists therefore needs overrides. The helper resolves that exact route's `contextWindow`, reserves `maxOutputTokens` plus the system-prompt and JSON/message framing estimate, and retains the largest newest whole-message suffix that fits the remaining token budget. Automatic requests retain their provider-selected input and use the same route budget. Timeout and caller cancellation are rechecked while consuming the stream and after it completes, so a late successful result cannot be accepted even if an interceptor or adapter ignores abort. Malformed or empty output, tool calls, and non-stop finish reasons also reject; the session-title service decides whether that rejection is an automatic warning or an explicit caller failure.
 
 After route and input validation, the helper appends a log-only `session/title-llm-request` event directly through `Session` before model dispatch. It contains the title-provider id, exact source seqs, route, system prompt, message list, and output-token cap used by the call. Persistence observes the record eagerly; the append does not need a title-specific marker, cast, settlement queue, or flush. The dispatched envelope is deep-frozen, carries `purpose: 'session-title'`, and deliberately lacks dsh-agent-loop's process-local request identity. Interceptors stay aligned with the record while loop-only reconstruction observers do not compare it with the conversation header. The DeepSeek adapter maps that purpose to thinking-disabled so the small output budget is reserved for visible title text; other adapters own their purpose-specific behavior. A later model failure leaves the request record intact; validation failures that never become dispatchable requests do not create one. The event stays outside derived model history.
 
@@ -20,7 +20,6 @@ Every field is required except the paired route override; there are no library d
 |---|---|
 | `targetWords` | Positive target word count for non-CJK titles. |
 | `targetCjkCharacters` | Positive target character count for Chinese, Japanese, or Korean titles. |
-| `maxInputBytes` | Positive UTF-8 byte ceiling for the final JSON-framed user prompt. |
 | `maxOutputTokens` | Positive auxiliary generation token cap. |
 | `timeoutMs` | Positive end-to-end deadline within the runtime timer limit. |
 | `provider`, `model` | Optional explicit route; both or neither. |
@@ -31,11 +30,11 @@ Every field is required except the paired route override; there are no library d
 
 #### What the model sees
 
-The title model receives a fixed system instruction to return one concise unadorned title in the input language, including the configured word and CJK-character targets. Its one user message contains a JSON array of the exact selected human messages and their seqs.
+The title model receives a fixed system instruction to return one concise unadorned title in the input language, including the configured word and CJK-character targets. Its one user message contains a JSON array of the exact selected model-visible messages. When an explicit refresh supplies guidance, a following sentence identifies the JSON-encoded instruction as an additional constraint on the title. The request is bounded from the route's actual `contextWindow` after reserving output, system, and JSON/message framing tokens.
 
 #### Token effect
 
-The auxiliary request consumes tokens according to selected input size and `maxOutputTokens`. It is separate from the main agent request and does not add title text or framing to agent history. DeepSeek title calls disable thinking; the main conversation retains its configured thinking mode.
+The auxiliary request consumes the retained input budget, optional refresh guidance, and `maxOutputTokens`. It is separate from the main agent request and does not add title text or framing to agent history. DeepSeek title calls disable thinking; the main conversation retains its configured thinking mode.
 
 #### KV Cache effect
 
@@ -44,4 +43,4 @@ No main-request invalidation. Auxiliary cache reuse is provider-specific; the fi
 ## Known Limitations and Deferred Work
 
 - The helper accepts text output only and rejects tool calls; structured-output adapters and provider-specific prompt variants are not exposed.
-- It enforces a byte ceiling for the whole framed user prompt rather than clipping individual messages or applying a retention policy.
+- If the newest whole model-visible message plus optional refresh guidance cannot fit after the context-window reservations, the helper rejects because it never clips message content.

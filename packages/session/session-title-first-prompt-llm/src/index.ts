@@ -5,6 +5,7 @@ import z from '@deepseek-ai/schemastery'
 import {
   registerSessionTitleLlmProvider,
   SessionTitleLlmConfigFields,
+  sessionTitleLlmMessages,
 } from '@deepseek-ai/dsh-session-title-llm'
 import type { SessionTitleLlmConfig } from '@deepseek-ai/dsh-session-title-llm'
 
@@ -18,7 +19,6 @@ export type Config = SessionTitleLlmConfig
 export const Config: z<Config> = z.object({
   targetWords: SessionTitleLlmConfigFields.targetWords,
   targetCjkCharacters: SessionTitleLlmConfigFields.targetCjkCharacters,
-  maxInputBytes: SessionTitleLlmConfigFields.maxInputBytes,
   maxOutputTokens: SessionTitleLlmConfigFields.maxOutputTokens,
   timeoutMs: SessionTitleLlmConfigFields.timeoutMs,
   provider: SessionTitleLlmConfigFields.provider,
@@ -29,10 +29,12 @@ export const Config: z<Config> = z.object({
 /**
  * Register the first-prompt model provider.
  * @param ctx - context exposing session-title, LLM, and session services.
- * @param config - required route, target, byte, token, and timeout policy.
+ * @param config - required route, target, token, and timeout policy.
  */
 export function apply(ctx: Context, config: Config): void {
-  registerSessionTitleLlmProvider(ctx, config, name, 'first-prompt', (messages) => {
+  registerSessionTitleLlmProvider(ctx, config, name, 'first-prompt', (request) => {
+    const messages = sessionTitleLlmMessages(request)
+    if (request.cause === 'refresh') return messages
     const first = messages[0]
     if (first === undefined) throw new Error('first-prompt title provider requires one human message')
     return [first]

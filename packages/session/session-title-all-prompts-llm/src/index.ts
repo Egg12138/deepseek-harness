@@ -5,6 +5,7 @@ import z from '@deepseek-ai/schemastery'
 import {
   registerSessionTitleLlmProvider,
   SessionTitleLlmConfigFields,
+  sessionTitleLlmMessages,
 } from '@deepseek-ai/dsh-session-title-llm'
 import type { SessionTitleLlmConfig } from '@deepseek-ai/dsh-session-title-llm'
 
@@ -18,7 +19,6 @@ export type Config = SessionTitleLlmConfig
 export const Config: z<Config> = z.object({
   targetWords: SessionTitleLlmConfigFields.targetWords,
   targetCjkCharacters: SessionTitleLlmConfigFields.targetCjkCharacters,
-  maxInputBytes: SessionTitleLlmConfigFields.maxInputBytes,
   maxOutputTokens: SessionTitleLlmConfigFields.maxOutputTokens,
   timeoutMs: SessionTitleLlmConfigFields.timeoutMs,
   provider: SessionTitleLlmConfigFields.provider,
@@ -29,8 +29,8 @@ export const Config: z<Config> = z.object({
 /**
  * Register the all-prompts model provider.
  * @param ctx - context exposing session-title, LLM, and session services.
- * @param config - required route, target, byte, token, and timeout policy.
+ * @param config - required route, target, token, and timeout policy.
  */
 export function apply(ctx: Context, config: Config): void {
-  registerSessionTitleLlmProvider(ctx, config, name, 'all-prompts', messages => messages)
+  registerSessionTitleLlmProvider(ctx, config, name, 'all-prompts', sessionTitleLlmMessages)
 }

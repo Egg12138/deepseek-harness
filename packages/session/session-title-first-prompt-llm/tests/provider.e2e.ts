@@ -28,7 +28,6 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('first-prompt title provider with
     await ctx.plugin(FirstMessageTitleProvider, {
       targetWords: 5,
       targetCjkCharacters: 10,
-      maxInputBytes: 4_096,
       maxOutputTokens: 64,
       timeoutMs: 60_000,
       provider: 'deepseek-official',

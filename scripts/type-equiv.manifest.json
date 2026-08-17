@@ -637,7 +637,17 @@
     },
     {
       "doc": "docs/subsystems/session-title.md",
+      "symbol": "SessionTitleMessage",
+      "source": "packages/session/session-title/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/session-title.md",
       "symbol": "SessionTitleAutomaticMode",
+      "source": "packages/session/session-title/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/session-title.md",
+      "symbol": "SessionTitleProviderCause",
       "source": "packages/session/session-title/src/index.ts"
     },
     {
@@ -653,6 +663,11 @@
     {
       "doc": "docs/subsystems/session-title.md",
       "symbol": "SessionTitleProvider",
+      "source": "packages/session/session-title/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/session-title.md",
+      "symbol": "SessionTitleRefreshOptions",
       "source": "packages/session/session-title/src/index.ts"
     },
     {

@@ -8,7 +8,7 @@ import z from '@deepseek-ai/schemastery'
 import { z as zod } from 'zod'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import { assertNever, deepFreeze, isAgentLoopRequest } from '@deepseek-ai/dsh-llm'
-import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
+import type { GenerateOptions, Message } from '@deepseek-ai/dsh-llm'
 import type {
   Session,
   SessionEvent,
@@ -117,10 +117,23 @@ export interface SessionTitleUserMessage {
   readonly seq: number
   /** Exact concatenated text-block content. */
   readonly text: string
+  /** Exact message projected from the source event. */
+  readonly message: Message
+}
+
+/** One message from the current model-visible surface. */
+export interface SessionTitleMessage {
+  /** Source surface event seq. */
+  readonly seq: number
+  /** Exact message projected by {@link Session.deriveMessages}. */
+  readonly message: Message
 }
 
 /** Automatic generation cadence owned by a registered provider. */
 export type SessionTitleAutomaticMode = 'first-prompt' | 'all-prompts'
+
+/** Operation that initiated one provider request. */
+export type SessionTitleProviderCause = 'automatic' | 'refresh'
 
 /** Immutable input supplied to one title-provider call. */
 export interface SessionTitleProviderRequest {
@@ -128,6 +141,12 @@ export interface SessionTitleProviderRequest {
   readonly session: Session
   /** All eligible human messages through this generation revision. */
   readonly messages: readonly SessionTitleUserMessage[]
+  /** Current model-visible surface for an explicit refresh. */
+  readonly derivedMessages?: readonly SessionTitleMessage[]
+  /** Whether cadence or an explicit refresh initiated this request. */
+  readonly cause: SessionTitleProviderCause
+  /** Optional user guidance for an explicit refresh. */
+  readonly instruction?: string
   /** Exact current logged main-request route, when one has been recorded. */
   readonly route?: SessionTitleModelProvenance
   /** Cancellation for supersession, disposal, timeout composition, or the explicit caller. */
@@ -138,7 +157,7 @@ export interface SessionTitleProviderRequest {
 export interface SessionTitleProviderResult {
   /** Proposed title text. */
   readonly title: string
-  /** Exact seqs from `request.messages` used by this result. */
+  /** Exact seqs from the request's selected message surface used by this result. */
   readonly messageSeqs: readonly number[]
   /** Auxiliary LLM route, when generation used a model. */
   readonly model?: SessionTitleModelProvenance
@@ -156,6 +175,14 @@ export interface SessionTitleProvider {
    * @returns proposed title plus exact input seqs and the optional provider/model route used to generate it.
    */
   generate(request: SessionTitleProviderRequest): Promise<SessionTitleProviderResult>
+}
+
+/** Optional cancellation and user guidance for an explicit title refresh. */
+export interface SessionTitleRefreshOptions {
+  /** Cancellation for the complete refresh operation. */
+  readonly signal?: AbortSignal
+  /** Additional user instruction supplied to the title provider. */
+  readonly instruction?: string
 }
 
 /**
@@ -178,9 +205,33 @@ export function collectSessionTitleMessages(
       .map(block => block.text)
       .join('\n')
     if (normalizeSessionTitle(text, Number.MAX_SAFE_INTEGER).length === 0) continue
-    messages.push({ seq: event.seq, text })
+    messages.push({ seq: event.seq, text, message: event.data })
   }
   return messages
+}
+
+/**
+ * Project the current model-visible surface with its durable source seqs.
+ * @param session - session whose compaction-aware surface is the input.
+ * @returns derived messages paired with the surface event that produced each one.
+ */
+export function deriveSessionTitleMessages(session: Session): SessionTitleMessage[] {
+  const seqByMessageId = new Map<string, number>()
+  for (const seq of session.surface.nodes) {
+    const event = session.events[seq]
+    /* v8 ignore next -- surface nodes are produced from the same session log. */
+    if (event === undefined) continue
+    const message = session.deriveEventMessage(event)
+    if (message !== null) seqByMessageId.set(message.id, seq)
+  }
+  return session.deriveMessages().map((message) => {
+    const seq = seqByMessageId.get(message.id)
+    /* v8 ignore next -- every derived message comes from the folded surface map. */
+    if (seq === undefined) {
+      throw new Error(`session-title: derived message "${message.id}" has no surface source`)
+    }
+    return { seq, message }
+  })
 }
 
 /**
@@ -234,6 +285,8 @@ interface PendingAutomaticWork {
   readonly registration: ProviderRegistration
   readonly revision: number
   readonly throughSeq: number
+  readonly cause: SessionTitleProviderCause
+  readonly instruction?: string
 }
 
 /** Provider call currently allowed to commit for one session. */
@@ -386,10 +439,11 @@ export class SessionTitleService extends Service {
    * Explicitly retry the registered provider, or materialize the built-in
    * fallback when no provider is registered.
    * @param session - exact live session to refresh.
-   * @param signal - optional caller cancellation.
+   * @param options - optional cancellation and user guidance for the provider.
    * @returns latest accepted title, or `undefined` when no eligible text exists.
    */
-  async refresh(session: Session, signal?: AbortSignal): Promise<SessionTitleSnapshot | undefined> {
+  async refresh(session: Session, options: SessionTitleRefreshOptions = {}): Promise<SessionTitleSnapshot | undefined> {
+    const { signal, instruction } = options
     signal?.throwIfAborted()
     this.assertServiceActive()
     if (this.ctx.sessions.get(session.id) !== session) {
@@ -398,7 +452,8 @@ export class SessionTitleService extends Service {
     const registration = this.registration
     const messages = collectSessionTitleMessages(session.events)
     const latest = messages.at(-1)
-    if (registration === undefined || registration.closing || latest === undefined) {
+    const derivedMessages = deriveSessionTitleMessages(session)
+    if (registration === undefined || registration.closing || (latest === undefined && derivedMessages.length === 0)) {
       // Explicit refresh is the unpin even without a provider: a standing
       // user title must not short-circuit ensureFallback into a no-op, so
       // re-derive and append the fallback over it when one is derivable.
@@ -418,7 +473,13 @@ export class SessionTitleService extends Service {
     const work = this.activate({
       registration,
       revision,
-      throughSeq: latest.seq,
+      /* v8 ignore next -- an active refresh has a live session event. */
+      throughSeq: latest?.seq ?? session.events.at(-1)?.seq ?? 0,
+      cause: 'refresh',
+      // A refresh is explicitly based on the current compaction-aware surface.
+      // The revision boundary remains the latest eligible human event for the
+      // automatic path and is ignored by refresh derivation below.
+      ...(instruction === undefined ? {} : { instruction }),
     }, state, signal)
     const config = session.requestHeader()?.config
     const route = config === undefined ? undefined : { provider: config.provider, model: config.model }
@@ -472,7 +533,12 @@ export class SessionTitleService extends Service {
       if (shouldSchedule) {
         const state = this.stateFor(session)
         const revision = this.supersede(state, 'newer user message superseded title generation')
-        state.pending = { registration, revision, throughSeq: event.seq }
+        state.pending = {
+          registration,
+          revision,
+          throughSeq: event.seq,
+          cause: 'automatic',
+        }
       }
     }
     this.defer(async () => {
@@ -558,14 +624,20 @@ export class SessionTitleService extends Service {
       await this.ensureFallback(session)
       this.assertCurrent(session, work)
       const messages = collectSessionTitleMessages(session.events, work.throughSeq)
+      const derivedMessages = work.cause === 'refresh'
+        ? deriveSessionTitleMessages(session)
+        : undefined
       const result = await work.registration.provider.generate({
         session,
         messages,
+        cause: work.cause,
+        ...(derivedMessages === undefined ? {} : { derivedMessages }),
+        ...(work.instruction === undefined ? {} : { instruction: work.instruction }),
         ...route === undefined ? {} : { route },
         signal: work.signal,
       })
       this.assertCurrent(session, work)
-      const accepted = this.validateResult(result, messages)
+      const accepted = this.validateResult(result, derivedMessages ?? messages)
       session.append('session/title', {
         title: accepted.title,
         messageSeqs: [...accepted.messageSeqs],
@@ -585,7 +657,7 @@ export class SessionTitleService extends Service {
   /** Validate and normalize provider output against the supplied message snapshot. */
   private validateResult(
     result: unknown,
-    messages: readonly SessionTitleUserMessage[],
+    messages: readonly (SessionTitleUserMessage | SessionTitleMessage)[],
   ): SessionTitleProviderResult {
     if (result === null || typeof result !== 'object') {
       throw new Error('session-title provider returned an invalid result')

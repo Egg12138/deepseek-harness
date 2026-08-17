@@ -1370,9 +1370,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['{SessionTitleInvalidError} when the title normalizes to empty.', '{Error} when the session is not live or the service is disposed.'],
       },
       {
-        signature: 'async refresh(session: Session, signal?: AbortSignal): Promise<SessionTitleSnapshot | undefined>',
+        signature: 'async refresh(session: Session, options: SessionTitleRefreshOptions = {}): Promise<SessionTitleSnapshot | undefined>',
         description: 'Explicitly retry the registered provider, or materialize the built-in fallback when no provider is registered.',
-        parameters: [{ name: 'session', description: 'exact live session to refresh.' }, { name: 'signal', description: 'optional caller cancellation.' }],
+        parameters: [{ name: 'session', description: 'exact live session to refresh.' }, { name: 'options', description: 'optional cancellation and user guidance for the provider.' }],
         returns: 'latest accepted title, or `undefined` when no eligible text exists.',
       },
       {
@@ -3914,6 +3914,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SessionTitleEventData {\n    readonly title: string;\n    readonly messageSeqs: number[];\n    readonly source: SessionTitleSource;\n}',
   },
   {
+    name: 'SessionTitleMessage',
+    declaration: 'export interface SessionTitleMessage {\n    readonly seq: number;\n    readonly message: Message;\n}',
+  },
+  {
     name: 'SessionTitleModelProvenance',
     declaration: 'export interface SessionTitleModelProvenance {\n    readonly provider: string;\n    readonly model: string;\n}',
   },
@@ -3930,16 +3934,24 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SessionTitleProvider {\n    readonly id: SessionTitleProviderId;\n    readonly automatic: SessionTitleAutomaticMode;\n    generate(request: SessionTitleProviderRequest): Promise<SessionTitleProviderResult>;\n}',
   },
   {
+    name: 'SessionTitleProviderCause',
+    declaration: 'export type SessionTitleProviderCause = \'automatic\' | \'refresh\';',
+  },
+  {
     name: 'SessionTitleProviderId',
     declaration: 'export type SessionTitleProviderId = Branded<\'SessionTitleProviderId\'>;',
   },
   {
     name: 'SessionTitleProviderRequest',
-    declaration: 'export interface SessionTitleProviderRequest {\n    readonly session: Session;\n    readonly messages: readonly SessionTitleUserMessage[];\n    readonly route?: SessionTitleModelProvenance;\n    readonly signal: AbortSignal;\n}',
+    declaration: 'export interface SessionTitleProviderRequest {\n    readonly session: Session;\n    readonly messages: readonly SessionTitleUserMessage[];\n    readonly derivedMessages?: readonly SessionTitleMessage[];\n    readonly cause: SessionTitleProviderCause;\n    readonly instruction?: string;\n    readonly route?: SessionTitleModelProvenance;\n    readonly signal: AbortSignal;\n}',
   },
   {
     name: 'SessionTitleProviderResult',
     declaration: 'export interface SessionTitleProviderResult {\n    readonly title: string;\n    readonly messageSeqs: readonly number[];\n    readonly model?: SessionTitleModelProvenance;\n}',
+  },
+  {
+    name: 'SessionTitleRefreshOptions',
+    declaration: 'export interface SessionTitleRefreshOptions {\n    readonly signal?: AbortSignal;\n    readonly instruction?: string;\n}',
   },
   {
     name: 'SessionTitleSnapshot',
@@ -3951,7 +3963,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionTitleUserMessage',
-    declaration: 'export interface SessionTitleUserMessage {\n    readonly seq: number;\n    readonly text: string;\n}',
+    declaration: 'export interface SessionTitleUserMessage {\n    readonly seq: number;\n    readonly text: string;\n    readonly message: Message;\n}',
   },
   {
     name: 'SettingsApplies',

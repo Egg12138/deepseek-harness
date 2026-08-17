@@ -27,7 +27,7 @@ describe('dsh-base bundle', () => {
     )
     expect(Array.isArray(parsed)).toBe(true)
     // The base layer is one insert list over the empty profile root.
-    const rows = (parsed as { insert?: { id?: string; config?: Record<string, unknown> }[] }[]).flatMap(
+    const rows = (parsed as { insert?: { id?: string; name?: string; config?: Record<string, unknown> }[] }[]).flatMap(
       patch => patch.insert ?? [],
     )
     expect(rows.length).toBeGreaterThan(50)
@@ -37,6 +37,15 @@ describe('dsh-base bundle', () => {
     })
     expect(rows.filter(row => row.id === 'subagent-codex')).toHaveLength(0)
     expect(rows.filter(row => row.id === 'subagent-claude-code')).toHaveLength(0)
+    expect(rows.find(row => row.id === 'command-session-title')?.name)
+      .toBe('@deepseek-ai/dsh-command-session-title')
+    expect(rows.find(row => row.id === 'session-title-llm')?.config).toEqual({
+      targetWords: 5,
+      targetCjkCharacters: 10,
+      maxOutputTokens: 64,
+      timeoutMs: 60000,
+    })
+    expect(manifest.dependencies).toHaveProperty('@deepseek-ai/dsh-command-session-title', 'workspace:^')
     expect(manifest.dependencies).not.toHaveProperty('@deepseek-ai/dsh-subagent-codex')
     expect(manifest.dependencies).not.toHaveProperty('@deepseek-ai/dsh-subagent-claude-code')
   })

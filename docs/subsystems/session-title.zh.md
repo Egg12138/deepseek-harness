@@ -71,7 +71,7 @@ interface SessionTitleSnapshot extends SessionTitleEventData {
 interface SessionTitleLlmRequestEventData {
   /** Registered title-provider identity responsible for the request. */
   readonly titleProvider: SessionTitleProviderId
-  /** Exact human `user/message` seqs represented in `messages`. */
+  /** Exact source surface seqs represented in `messages`. */
   readonly messageSeqs: number[]
   /** Exact auxiliary LLM route. */
   readonly route: SessionTitleModelProvenance
@@ -86,7 +86,7 @@ interface SessionTitleLlmRequestEventData {
 
 ## 提供方输入与输出
 
-服务会对截至某一修订的合格消息创建快照。提供方返回的 seq 仅可来自该请求；由服务负责的接纳流程会验证顺序、规范化标题、强制执行字节上限，并追加标题及其来源消息 seq 和来源类型。
+服务会对截至某一修订的合格消息创建快照。提供方输入会标明调用由自动节奏还是显式刷新发起，显式刷新还可以携带用户说明。提供方返回的 seq 仅可来自该请求；由服务负责的接纳流程会验证顺序、规范化标题、强制执行字节上限，并追加标题及其来源消息 seq 和来源类型。
 
 ```ts type-equiv
 /** One eligible human text message exposed to title providers. */
@@ -95,6 +95,18 @@ interface SessionTitleUserMessage {
   readonly seq: number
   /** Exact concatenated text-block content. */
   readonly text: string
+  /** Exact message projected from the source event. */
+  readonly message: Message
+}
+```
+
+```ts type-equiv
+/** One message from the current model-visible surface. */
+interface SessionTitleMessage {
+  /** Source surface event seq. */
+  readonly seq: number
+  /** Exact message projected by {@link Session.deriveMessages}. */
+  readonly message: Message
 }
 ```
 
@@ -104,12 +116,23 @@ type SessionTitleAutomaticMode = 'first-prompt' | 'all-prompts'
 ```
 
 ```ts type-equiv
+/** Operation that initiated one provider request. */
+type SessionTitleProviderCause = 'automatic' | 'refresh'
+```
+
+```ts type-equiv
 /** Immutable input supplied to one title-provider call. */
 interface SessionTitleProviderRequest {
   /** Live session being titled. */
   readonly session: Session
   /** All eligible human messages through this generation revision. */
   readonly messages: readonly SessionTitleUserMessage[]
+  /** Current model-visible surface for an explicit refresh. */
+  readonly derivedMessages?: readonly SessionTitleMessage[]
+  /** Whether cadence or an explicit refresh initiated this request. */
+  readonly cause: SessionTitleProviderCause
+  /** Optional user guidance for an explicit refresh. */
+  readonly instruction?: string
   /** Exact current logged main-request route, when one has been recorded. */
   readonly route?: SessionTitleModelProvenance
   /** Cancellation for supersession, disposal, timeout composition, or the explicit caller. */
@@ -122,7 +145,7 @@ interface SessionTitleProviderRequest {
 interface SessionTitleProviderResult {
   /** Proposed title text. */
   readonly title: string
-  /** Exact seqs from `request.messages` used by this result. */
+  /** Exact seqs from the request's selected message surface used by this result. */
   readonly messageSeqs: readonly number[]
   /** Auxiliary LLM route, when generation used a model. */
   readonly model?: SessionTitleModelProvenance
@@ -144,6 +167,20 @@ interface SessionTitleProvider {
   generate(request: SessionTitleProviderRequest): Promise<SessionTitleProviderResult>
 }
 ```
+
+```ts type-equiv
+/** Optional cancellation and user guidance for an explicit title refresh. */
+interface SessionTitleRefreshOptions {
+  /** Cancellation for the complete refresh operation. */
+  readonly signal?: AbortSignal
+  /** Additional user instruction supplied to the title provider. */
+  readonly instruction?: string
+}
+```
+
+## 显式重新生成命令
+
+[`@deepseek-ai/dsh-command-session-title`](../../packages/session/command-session-title) 会在 `ctx.commands` 上注册 `/rename [instruction]`。它针对接收命令的 agent（智能体）会话调用 `refresh()`；显式刷新使用当前 `session.deriveMessages()` 表层，因此 compaction 后的上下文与主模型一致。共享 LLM 辅助组件会解析所选模型的 `contextWindow`，预留标题输出、系统提示词和 JSON／消息封装 token，并保留最大最新完整消息后缀而不剪裁内容。可选命令文本会成为 `instruction`，该辅助组件会在分发前记录最终的确切模型可见消息和保留的 seq。Web 直接编辑标题仍使用独立的 `rename(session, title)` API，以设置用户提供的精确标题。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -184,10 +221,10 @@ rename(session: Session, title: string): SessionTitleSnapshot
  * Explicitly retry the registered provider, or materialize the built-in
  * fallback when no provider is registered.
  * @param session - exact live session to refresh.
- * @param signal - optional caller cancellation.
+ * @param options - optional cancellation and user guidance for the provider.
  * @returns latest accepted title, or `undefined` when no eligible text exists.
  */
-async refresh(session: Session, signal?: AbortSignal): Promise<SessionTitleSnapshot | undefined>
+async refresh(session: Session, options: SessionTitleRefreshOptions = {}): Promise<SessionTitleSnapshot | undefined>
 
 /**
  * Register the sole optional title provider. Disposal aborts its pending and
@@ -200,5 +237,5 @@ register(provider: SessionTitleProvider): () => Promise<void>
 
 Types: [Session](session.md)
 
-Source: [`packages/session/session-title/src/index.ts:261`](../../packages/session/session-title/src/index.ts)
+Source: [`packages/session/session-title/src/index.ts:314`](../../packages/session/session-title/src/index.ts)
 <!-- END GENERATED cordis-surface -->

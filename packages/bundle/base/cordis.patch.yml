@@ -48,7 +48,6 @@
       config:
         targetWords: 5
         targetCjkCharacters: 10
-        maxInputBytes: 4096
         maxOutputTokens: 64
         timeoutMs: 60000
 
@@ -249,6 +248,9 @@
 
     - id: commands
       name: '@deepseek-ai/dsh-commands'
+
+    - id: command-session-title
+      name: '@deepseek-ai/dsh-command-session-title'
 
     - id: command-feedback
       name: '@deepseek-ai/dsh-command-feedback'

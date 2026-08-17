@@ -71,7 +71,7 @@ The shared LLM helper records each validated, dispatchable title request before 
 interface SessionTitleLlmRequestEventData {
   /** Registered title-provider identity responsible for the request. */
   readonly titleProvider: SessionTitleProviderId
-  /** Exact human `user/message` seqs represented in `messages`. */
+  /** Exact source surface seqs represented in `messages`. */
   readonly messageSeqs: number[]
   /** Exact auxiliary LLM route. */
   readonly route: SessionTitleModelProvenance
@@ -86,7 +86,7 @@ interface SessionTitleLlmRequestEventData {
 
 ## Provider input and output
 
-The service snapshots eligible messages through one revision. A provider returns only seqs from that request; service-owned acceptance verifies ordering, normalizes the title, enforces the byte limit, and appends the title with its source-message seqs and source kind.
+The service snapshots eligible messages through one revision. Provider input identifies whether automatic cadence or an explicit refresh initiated the call, and an explicit refresh may carry user guidance. A provider returns only seqs from that request; service-owned acceptance verifies ordering, normalizes the title, enforces the byte limit, and appends the title with its source-message seqs and source kind.
 
 ```ts type-equiv
 /** One eligible human text message exposed to title providers. */
@@ -95,6 +95,18 @@ interface SessionTitleUserMessage {
   readonly seq: number
   /** Exact concatenated text-block content. */
   readonly text: string
+  /** Exact message projected from the source event. */
+  readonly message: Message
+}
+```
+
+```ts type-equiv
+/** One message from the current model-visible surface. */
+interface SessionTitleMessage {
+  /** Source surface event seq. */
+  readonly seq: number
+  /** Exact message projected by {@link Session.deriveMessages}. */
+  readonly message: Message
 }
 ```
 
@@ -104,12 +116,23 @@ type SessionTitleAutomaticMode = 'first-prompt' | 'all-prompts'
 ```
 
 ```ts type-equiv
+/** Operation that initiated one provider request. */
+type SessionTitleProviderCause = 'automatic' | 'refresh'
+```
+
+```ts type-equiv
 /** Immutable input supplied to one title-provider call. */
 interface SessionTitleProviderRequest {
   /** Live session being titled. */
   readonly session: Session
   /** All eligible human messages through this generation revision. */
   readonly messages: readonly SessionTitleUserMessage[]
+  /** Current model-visible surface for an explicit refresh. */
+  readonly derivedMessages?: readonly SessionTitleMessage[]
+  /** Whether cadence or an explicit refresh initiated this request. */
+  readonly cause: SessionTitleProviderCause
+  /** Optional user guidance for an explicit refresh. */
+  readonly instruction?: string
   /** Exact current logged main-request route, when one has been recorded. */
   readonly route?: SessionTitleModelProvenance
   /** Cancellation for supersession, disposal, timeout composition, or the explicit caller. */
@@ -122,7 +145,7 @@ interface SessionTitleProviderRequest {
 interface SessionTitleProviderResult {
   /** Proposed title text. */
   readonly title: string
-  /** Exact seqs from `request.messages` used by this result. */
+  /** Exact seqs from the request's selected message surface used by this result. */
   readonly messageSeqs: readonly number[]
   /** Auxiliary LLM route, when generation used a model. */
   readonly model?: SessionTitleModelProvenance
@@ -144,6 +167,20 @@ interface SessionTitleProvider {
   generate(request: SessionTitleProviderRequest): Promise<SessionTitleProviderResult>
 }
 ```
+
+```ts type-equiv
+/** Optional cancellation and user guidance for an explicit title refresh. */
+interface SessionTitleRefreshOptions {
+  /** Cancellation for the complete refresh operation. */
+  readonly signal?: AbortSignal
+  /** Additional user instruction supplied to the title provider. */
+  readonly instruction?: string
+}
+```
+
+## Explicit regeneration command
+
+[`@deepseek-ai/dsh-command-session-title`](../../packages/session/command-session-title) registers `/rename [instruction]` on `ctx.commands`. It calls `refresh()` over the receiving Agent's Session; explicit refreshes use the current `session.deriveMessages()` surface, so compaction replacements match the main model's context. The shared LLM helper resolves the selected model's `contextWindow`, reserves title output, system prompt, and JSON/message framing tokens, and retains the largest newest whole-message suffix without clipping content. Optional command text becomes `instruction`, and the helper records the resulting exact model-visible message and retained seqs before dispatch. Direct Web title editing remains the separate `rename(session, title)` API for an exact user-supplied title.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -184,10 +221,10 @@ rename(session: Session, title: string): SessionTitleSnapshot
  * Explicitly retry the registered provider, or materialize the built-in
  * fallback when no provider is registered.
  * @param session - exact live session to refresh.
- * @param signal - optional caller cancellation.
+ * @param options - optional cancellation and user guidance for the provider.
  * @returns latest accepted title, or `undefined` when no eligible text exists.
  */
-async refresh(session: Session, signal?: AbortSignal): Promise<SessionTitleSnapshot | undefined>
+async refresh(session: Session, options: SessionTitleRefreshOptions = {}): Promise<SessionTitleSnapshot | undefined>
 
 /**
  * Register the sole optional title provider. Disposal aborts its pending and
@@ -200,5 +237,5 @@ register(provider: SessionTitleProvider): () => Promise<void>
 
 Types: [Session](session.md)
 
-Source: [`packages/session/session-title/src/index.ts:261`](../../packages/session/session-title/src/index.ts)
+Source: [`packages/session/session-title/src/index.ts:314`](../../packages/session/session-title/src/index.ts)
 <!-- END GENERATED cordis-surface -->
