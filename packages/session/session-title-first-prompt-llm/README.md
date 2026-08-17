@@ -4,7 +4,7 @@ English | [中文](README.zh.md)
 
 Optional `ctx.sessionTitle` provider that summarizes eligible human messages through `ctx.llm`. It registers the `first-prompt` cadence, runs automatically only when a fresh non-fork session first creates its fallback, and uses only that first message for the automatic result. An explicit `ctx.sessionTitle.refresh()` uses the session's current compaction-aware `deriveMessages()` surface and may add user guidance; the shared input policy retains a newest whole-message suffix within the actual model context window after its reservations.
 
-The plugin uses the complete required [shared LLM configuration](../session-title-llm/README.md#configuration). Omit both `provider` and `model` to inherit the exact route from the current logged main request, or set both to route title generation independently.
+The plugin uses the complete required [shared LLM configuration](../session-title-llm/README.md#configuration). Omit both `provider` and `model` to inherit the exact route from the current logged main request; an imported session without a route uses the shared `deepseek-official/deepseek-v4-flash` plus `high`-effort fallback. Set both to route title generation independently.
 
 ## Model Experience
 

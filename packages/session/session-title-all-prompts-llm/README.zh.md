@@ -4,7 +4,7 @@
 
 可选的 `ctx.sessionTitle` 提供方，通过 `ctx.llm` 总结所有符合条件的用户消息。它注册 `all-prompts` 节奏，并在每条新用户提示词后启动新 revision，同时使用预置历史与子会话提示词。较新的 revision 会中止并取代旧工作；即使提供方忽略取消，也无法提交陈旧输出。
 
-该插件使用完整且必填的[共享 LLM（大语言模型）配置](../session-title-llm/README.md#configuration)。同时省略 `provider` 与 `model` 时，会继承每个当前已记录主请求的确切路由；也可以同时设置二者，使标题生成使用独立路由。自动调用使用符合条件的人类消息；显式刷新使用会话当前经过 compaction 的 `deriveMessages()` 表层。共享策略会在实际模型上下文窗口扣除输出、系统提示词和 JSON／消息封装预留后保留最新的完整消息。
+该插件使用完整且必填的[共享 LLM（大语言模型）配置](../session-title-llm/README.md#configuration)。同时省略 `provider` 与 `model` 时，会继承每个当前已记录主请求的确切路由；导入的 session 没有路由时，则使用共享的 `deepseek-official/deepseek-v4-flash` 与 `high` effort 回退。也可以同时设置二者，使标题生成使用独立路由。自动调用使用符合条件的人类消息；显式刷新使用会话当前经过 compaction 的 `deriveMessages()` 表层。共享策略会在实际模型上下文窗口扣除输出、系统提示词和 JSON／消息封装预留后保留最新的完整消息。
 
 ## 模型体验
 

@@ -1,6 +1,6 @@
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
-import LlmRuntime, { createUserMessage, CallId, isAgentLoopRequest, LlmAdapter  } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { createUserMessage, CallId, isAgentLoopRequest, LlmAdapter, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { FinishReason, GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import { SessionTitleProviderId } from '@deepseek-ai/dsh-session-title'
@@ -387,12 +387,41 @@ describe('generateSessionTitleWithLlm', () => {
     expect(() => resolveSessionTitleLlmConfig(CONFIG)).not.toThrow()
   })
 
-  it('rejects an absent route, empty selection, and pre-aborted caller before model dispatch', async () => {
-    const { ctx, adapter } = await withScript(SCRIPT)
+  it('uses the default DeepSeek route and high effort for an imported session without a route', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(LlmRuntime)
+    const adapter = new RecordingAdapter(SCRIPT)
+    adapter.resolveModel = async (provider, model) => ({
+      provider,
+      id: model,
+      name: model,
+      context: { contextWindow: 4_096 },
+      reasoning: {
+        efforts: [{ id: ReasoningEffortId('high'), name: 'High' }],
+        defaultEffort: ReasoningEffortId('high'),
+      },
+    })
+    ctx.llm.registerAdapter(['deepseek-official'], adapter)
     const config = resolveSessionTitleLlmConfig(CONFIG)
     const unrouted = requestWithoutRoute(ctx)
-    await expect(generateSessionTitleWithLlm(ctx, config, unrouted, selectedMessages(unrouted), TITLE_PROVIDER))
-      .rejects.toThrow(/no logged request route/)
+    const result = await generateSessionTitleWithLlm(ctx, config, unrouted, selectedMessages(unrouted), TITLE_PROVIDER)
+    expect(result.model).toEqual({ provider: 'deepseek-official', model: 'deepseek-v4-flash' })
+    expect(adapter.requests[0]).toMatchObject({
+      provider: 'deepseek-official',
+      model: 'deepseek-v4-flash',
+      reasoningEffort: ReasoningEffortId('high'),
+    })
+    expect(unrouted.session.events.findLast(event => event.type === 'session/title-llm-request')?.data)
+      .toMatchObject({
+        route: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+        reasoningEffort: 'high',
+      })
+  })
+
+  it('rejects empty selection and a pre-aborted caller before model dispatch', async () => {
+    const { ctx, adapter } = await withScript(SCRIPT)
+    const config = resolveSessionTitleLlmConfig(CONFIG)
     const empty = request(ctx)
     await expect(generateSessionTitleWithLlm(ctx, config, empty, [], TITLE_PROVIDER))
       .rejects.toThrow(/at least one source message/)

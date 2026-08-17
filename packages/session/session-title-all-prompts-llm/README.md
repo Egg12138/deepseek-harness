@@ -4,7 +4,7 @@ English | [中文](README.zh.md)
 
 Optional `ctx.sessionTitle` provider that summarizes every eligible human message through `ctx.llm`. It registers the `all-prompts` cadence and starts a new revision after each new human prompt, using seeded history as well as child-session prompts. A newer revision aborts and supersedes older work; even a provider that ignores cancellation cannot commit stale output.
 
-The plugin uses the complete required [shared LLM configuration](../session-title-llm/README.md#configuration). Omit both `provider` and `model` to inherit the exact route from each current logged main request, or set both to route title generation independently. Automatic calls use eligible human messages; explicit refreshes use the session's current compaction-aware `deriveMessages()` surface. The shared policy retains newest whole messages within the selected model's context window after reserving output, system, and JSON/message framing tokens.
+The plugin uses the complete required [shared LLM configuration](../session-title-llm/README.md#configuration). Omit both `provider` and `model` to inherit the exact route from each current logged main request; an imported session without a route uses the shared `deepseek-official/deepseek-v4-flash` plus `high`-effort fallback. Set both to route title generation independently. Automatic calls use eligible human messages; explicit refreshes use the session's current compaction-aware `deriveMessages()` surface. The shared policy retains newest whole messages within the selected model's context window after reserving output, system, and JSON/message framing tokens.
 
 ## Model Experience
 

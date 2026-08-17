@@ -6,8 +6,8 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { createUserMessage, BlockAssembler, deepFreeze } from '@deepseek-ai/dsh-llm'
-import type { FinishReason, GenerateOptions, Message } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, BlockAssembler, deepFreeze, ReasoningEffortId as createReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import type { FinishReason, GenerateOptions, Message, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { deadline, MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import {
   normalizeSessionTitle,
@@ -29,6 +29,8 @@ export interface SessionTitleLlmRequestEventData {
   readonly messageSeqs: number[]
   /** Exact auxiliary LLM route. */
   readonly route: SessionTitleModelProvenance
+  /** Explicit effort selected for the auxiliary request, when one was needed. */
+  readonly reasoningEffort?: ReasoningEffortId
   /** Exact auxiliary system prompt. */
   readonly system: string
   /** Exact auxiliary message list. */
@@ -78,6 +80,15 @@ export const SessionTitleLlmConfigFields = {
 
 /** Shared Loader schema with no library defaults. */
 export const SessionTitleLlmConfigSchema: z<SessionTitleLlmConfig> = z.object(SessionTitleLlmConfigFields)
+
+/** Route used when an imported session has no logged request/header route. */
+export const DEFAULT_SESSION_TITLE_ROUTE: SessionTitleModelProvenance = Object.freeze({
+  provider: 'deepseek-official',
+  model: 'deepseek-v4-flash',
+})
+
+/** Reasoning effort used with the imported-session title route fallback. */
+export const DEFAULT_SESSION_TITLE_REASONING_EFFORT = createReasoningEffortId('high')
 
 /** Complete configuration key set for direct construction validation. */
 const CONFIG_KEYS: ReadonlySet<string> = new Set([
@@ -173,18 +184,24 @@ export function registerSessionTitleLlmProvider(
   })
 }
 
-/** Resolve the explicit pair or the exact route captured from `request/header`. */
+interface ResolvedTitleRoute {
+  readonly route: SessionTitleModelProvenance
+  readonly reasoningEffort?: ReasoningEffortId
+}
+
+/** Resolve an explicit pair, the logged route, or the imported-session fallback. */
 function resolveRoute(
   config: ResolvedSessionTitleLlmConfig,
   request: SessionTitleProviderRequest,
-): SessionTitleModelProvenance {
+): ResolvedTitleRoute {
   if (config.provider !== undefined && config.model !== undefined) {
-    return { provider: config.provider, model: config.model }
+    return { route: { provider: config.provider, model: config.model } }
   }
-  if (request.route === undefined) {
-    throw new Error('session-title-llm: no logged request route is available; configure provider and model together')
+  if (request.route !== undefined) return { route: request.route }
+  return {
+    route: DEFAULT_SESSION_TITLE_ROUTE,
+    reasoningEffort: DEFAULT_SESSION_TITLE_REASONING_EFFORT,
   }
-  return request.route
 }
 
 /** Stable language-aware system instruction shared by both provider plugins. */
@@ -281,7 +298,9 @@ export async function generateSessionTitleWithLlm(
   if (selectedMessages.length === 0) {
     throw new Error('session-title-llm: at least one source message is required')
   }
-  const route = resolveRoute(config, request)
+  const resolvedRoute = resolveRoute(config, request)
+  const route = resolvedRoute.route
+  const reasoningEffort = resolvedRoute.reasoningEffort
   const modelInfo = await ctx.llm.resolveModelInfo(route.provider, route.model, request.signal)
   const contextWindow = modelInfo.context?.contextWindow
   if (contextWindow === undefined) {
@@ -304,6 +323,7 @@ export async function generateSessionTitleWithLlm(
   const options: GenerateOptions = deepFreeze({
     provider: route.provider,
     model: route.model,
+    ...reasoningEffort === undefined ? {} : { reasoningEffort },
     messages,
     system,
     maxTokens: config.maxOutputTokens,
@@ -315,6 +335,7 @@ export async function generateSessionTitleWithLlm(
     titleProvider,
     messageSeqs: retainedMessages.map(message => message.seq),
     route,
+    ...reasoningEffort === undefined ? {} : { reasoningEffort },
     system,
     messages,
     maxTokens: config.maxOutputTokens,

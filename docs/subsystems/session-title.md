@@ -75,6 +75,8 @@ interface SessionTitleLlmRequestEventData {
   readonly messageSeqs: number[]
   /** Exact auxiliary LLM route. */
   readonly route: SessionTitleModelProvenance
+  /** Explicit effort selected for the auxiliary request, when one was needed. */
+  readonly reasoningEffort?: ReasoningEffortId
   /** Exact auxiliary system prompt. */
   readonly system: string
   /** Exact auxiliary message list. */
