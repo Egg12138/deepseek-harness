@@ -176,6 +176,8 @@ describe('/rename real Loader composition through cordis.yml', () => {
       model: 'title-model',
       purpose: 'session-title',
     })
+    expect(adapter.requests[0]?.system?.split('\n')[0])
+      .toBe('You are a helpful software engineer assistant.')
     const content = adapter.requests[0]?.messages[0]?.content[0]
     expect(content?.type === 'text' && content.text).toContain('Discuss the storage design')
     expect(content?.type === 'text' && content.text).toContain('Then cover cancellation races')

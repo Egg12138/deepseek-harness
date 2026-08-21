@@ -142,6 +142,38 @@ async function withScript(script: readonly StreamChunk[], contextWindow = 4_096)
   return { ctx, adapter }
 }
 
+function multiTopicRequest(
+  ctx: Context,
+  cause: SessionTitleProviderRequest['cause'],
+): { request: SessionTitleProviderRequest; recentSeqs: readonly [number, number] } {
+  const session = ctx.sessions.create(SessionId(`title-multi-topic-${++nextSession}`))
+  session.append('turn/start', { turn: 1 })
+  const messages = [
+    `old storage details ${'x'.repeat(2_000)}`,
+    `old UI details ${'y'.repeat(1_000)}`,
+    'recent cancellation context',
+    'latest cancellation behavior',
+  ].map((text) => {
+    const message = createUserMessage({
+      content: [{ type: 'text', text }],
+      source: { kind: 'user' },
+    })
+    const event = session.append('user/message', message, { surfaceOp: 'append' })
+    return { seq: event.seq, text, message }
+  })
+  session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+  return {
+    request: {
+      session,
+      cause,
+      messages,
+      route: { provider: 'current-route', model: 'current-model' },
+      signal: new AbortController().signal,
+    },
+    recentSeqs: [messages[2]!.seq, messages[3]!.seq],
+  }
+}
+
 describe('generateSessionTitleWithLlm', () => {
   it('uses the explicit refresh derived surface and reserves the route context window', async () => {
     const ctx = new Context()
@@ -182,6 +214,8 @@ describe('generateSessionTitleWithLlm', () => {
     )
 
     expect(result.messageSeqs).toEqual([providerRequest.messages[1]!.seq])
+    expect(adapter.requests[0]?.system?.split('\n')[0])
+      .toBe('You are a helpful software engineer assistant.')
     const prompt = adapter.requests[0]?.messages[0]?.content[0]
     expect(prompt?.type === 'text' && prompt.text).toContain('compacted summary that must reach rename')
     expect(prompt?.type === 'text' && prompt.text).not.toContain('first prompt')
@@ -225,6 +259,8 @@ describe('generateSessionTitleWithLlm', () => {
       sessionId: providerRequest.session.id,
       purpose: 'session-title',
     })
+    expect(options.system?.split('\n')[0])
+      .toBe('Create a concise title for an AI coding-assistant session from the supplied human messages.')
     expect(options.system).toContain('5 words')
     expect(options.system).toContain('10 CJK characters')
     const prompt = options.messages[0]?.content[0]
@@ -261,62 +297,43 @@ describe('generateSessionTitleWithLlm', () => {
     })
   })
 
-  it('retains the newest whole messages when an explicit refresh exceeds its input budget', async () => {
+  it('retains the newest whole messages when an automatic request exceeds its input budget', async () => {
     const { ctx, adapter } = await withScript(SCRIPT, 300)
-    const original = request(ctx)
-    const [first, second] = original.messages
-    if (first === undefined || second === undefined) throw new Error('expected two source messages')
-    const third = original.session.append('user/message', createUserMessage({
-      content: [{ type: 'text', text: 'recent cancellation context' }],
-      source: { kind: 'user' },
-    }), { surfaceOp: 'append' })
-    const latest = original.session.append('user/message', createUserMessage({
-      content: [{ type: 'text', text: 'latest cancellation behavior' }],
-      source: { kind: 'user' },
-    }), { surfaceOp: 'append' })
-    const refresh: SessionTitleProviderRequest = {
-      ...original,
-      cause: 'refresh',
-      instruction: 'Focus on cancellation.',
-      messages: [
-        {
-          seq: first.seq,
-          text: `old storage details ${'x'.repeat(2_000)}`,
-          message: createUserMessage({ content: [{ type: 'text', text: `old storage details ${'x'.repeat(2_000)}` }], source: { kind: 'user' } }),
-        },
-        {
-          seq: second.seq,
-          text: `old UI details ${'y'.repeat(1_000)}`,
-          message: createUserMessage({ content: [{ type: 'text', text: `old UI details ${'y'.repeat(1_000)}` }], source: { kind: 'user' } }),
-        },
-        {
-          seq: third.seq,
-          text: 'recent cancellation context',
-          message: original.session.deriveEventMessage(original.session.events[third.seq]!)!,
-        },
-        {
-          seq: latest.seq,
-          text: 'latest cancellation behavior',
-          message: original.session.deriveEventMessage(original.session.events[latest.seq]!)!,
-        },
-      ],
-    }
+    const { request: automatic, recentSeqs } = multiTopicRequest(ctx, 'automatic')
 
     const result = await generateSessionTitleWithLlm(
+      ctx,
+      resolveSessionTitleLlmConfig(CONFIG),
+      automatic,
+      selectedMessages(automatic),
+      TITLE_PROVIDER,
+    )
+
+    expect(result.messageSeqs).toEqual(recentSeqs)
+    const dispatched = adapter.requests[0]?.messages[0]?.content[0]
+    expect(dispatched?.type === 'text' && dispatched.text).toContain('latest cancellation behavior')
+    expect(dispatched?.type === 'text' && dispatched.text).not.toContain('old storage details')
+    expect(automatic.session.events.findLast(event => event.type === 'session/title-llm-request')?.data.messageSeqs)
+      .toEqual(recentSeqs)
+  })
+
+  it('rejects an explicit refresh rather than dropping older current context', async () => {
+    const { ctx, adapter } = await withScript(SCRIPT, 300)
+    const { request: base } = multiTopicRequest(ctx, 'refresh')
+    const refresh: SessionTitleProviderRequest = {
+      ...base,
+      instruction: 'Focus on cancellation.',
+    }
+
+    await expect(generateSessionTitleWithLlm(
       ctx,
       resolveSessionTitleLlmConfig(CONFIG),
       refresh,
       selectedMessages(refresh),
       TITLE_PROVIDER,
-    )
-
-    expect(result.messageSeqs).toEqual([third.seq, latest.seq])
-    const dispatched = adapter.requests[0]?.messages[0]?.content[0]
-    expect(dispatched?.type === 'text' && dispatched.text).toContain('latest cancellation behavior')
-    expect(dispatched?.type === 'text' && dispatched.text).toContain('Focus on cancellation.')
-    expect(dispatched?.type === 'text' && dispatched.text).not.toContain('old storage details')
-    expect(refresh.session.events.findLast(event => event.type === 'session/title-llm-request')?.data.messageSeqs)
-      .toEqual([third.seq, latest.seq])
+    )).rejects.toThrow(/complete refresh context needs .* compact the session/)
+    expect(adapter.requests).toHaveLength(0)
+    expect(refresh.session.events.some(event => event.type === 'session/title-llm-request')).toBe(false)
   })
 
   it('requires model context metadata and a positive input budget', async () => {

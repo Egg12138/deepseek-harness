@@ -12,7 +12,7 @@ Human-facing `/rename [instruction]` over the registered session-title provider.
 | `/rename <instruction>` | Regenerate from that same derived surface and add the trimmed instruction to the title-model request. |
 | Either form before an eligible prompt, or without a provider | Return a direct error without claiming a model-generated title. |
 
-A successful result names the accepted title and carries the `session/title` event seq as `sourceEventSeq`. The command sets `recordInput: false`: the exact auxiliary `session/title-llm-request` message owns any user instruction that reached the model, while `command/run` and `command/done` retain the command lifecycle. Whitespace-only input is the no-instruction form. The title provider resolves the selected model's `contextWindow`, reserves output, system-prompt, and JSON/message framing tokens, and retains the largest newest whole-message suffix that fits.
+A successful result names the accepted title and carries the `session/title` event seq as `sourceEventSeq`. The command sets `recordInput: false`: the exact auxiliary `session/title-llm-request` message owns any user instruction that reached the model, while `command/run` and `command/done` retain the command lifecycle. Whitespace-only input is the no-instruction form. The complete current derived surface and optional instruction must fit after the title provider reserves output, system-prompt, and JSON/message framing tokens; otherwise the command fails before model dispatch and directs the user to compact the session or select a title model with a larger context window.
 
 This command means “generate another title.” It does not call `SessionTitleService.rename(session, exactTitle)`, which is the separate direct-edit API that records a user-sourced title and pins it against automatic generation.
 
@@ -39,7 +39,7 @@ The shipped base bundle mounts all four. This package also exports a `dsh.bundle
 
 #### What the model sees
 
-The main conversation model sees nothing from the command lifecycle or accepted title. The separate title request starts with the current `session.deriveMessages()` surface, so compaction changes are reflected exactly as they are for the main model. When supplied, the JSON-encoded instruction follows those messages. The title provider resolves the selected model's `contextWindow`, reserves title output, system prompt, and JSON/message framing tokens, and keeps the newest whole-message suffix that fits; no message is clipped.
+The main conversation model sees nothing from the command lifecycle or accepted title. The separate title request contains the complete current `session.deriveMessages()` surface, so compaction changes are reflected exactly as they are for the main model. When supplied, the JSON-encoded instruction follows those messages. The title provider resolves the selected model's `contextWindow` and reserves title output, system prompt, and JSON/message framing tokens; it rejects before dispatch instead of dropping or clipping any current message when the complete input does not fit.
 
 #### Token effect
 
@@ -53,3 +53,4 @@ No main-request invalidation. Auxiliary cache reuse is provider-specific; later 
 
 - **Guidance is not a deterministic title** — the optional argument steers the provider but does not force exact output; direct title editing remains a separate UI and service operation.
 - **Whole derived surface is title input** — explicit `/rename` includes the compaction-aware assistant, user, and tool messages visible to the main model.
+- **Oversized current surface rejects** — compact the session or configure a title model with a larger context window when the complete derived surface does not fit.

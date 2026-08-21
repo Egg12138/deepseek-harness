@@ -12,7 +12,7 @@
 | `/rename <instruction>` | 根据相同的派生消息表层重新生成，并将去除首尾空白的说明附加到标题模型请求。 |
 | 在出现符合条件的提示词前使用任一形式，或未配置提供方 | 直接返回错误，不声称生成了模型标题。 |
 
-成功结果会给出已接受的标题，并将 `session/title` 事件 seq 作为 `sourceEventSeq`。该命令设置 `recordInput: false`：精确的辅助 `session/title-llm-request` 消息负责保存任何实际到达模型的用户说明，`command/run` 与 `command/done` 则保留命令生命周期。只有空白的输入等价于不带说明。标题提供方会解析所选模型的 `contextWindow`，预留输出、系统提示词和 JSON／消息封装 token，并保留能够放入预算的最大最新完整消息后缀。
+成功结果会给出已接受的标题，并将 `session/title` 事件 seq 作为 `sourceEventSeq`。该命令设置 `recordInput: false`：精确的辅助 `session/title-llm-request` 消息负责保存任何实际到达模型的用户说明，`command/run` 与 `command/done` 则保留命令生命周期。只有空白的输入等价于不带说明。标题提供方预留输出、系统提示词和 JSON／消息封装 token 后，当前完整派生表层与可选说明必须能够放入剩余预算；否则命令会在模型分发前失败，并提示用户先 compact 会话或选择上下文窗口更大的标题模型。
 
 该命令表示“再生成一个标题”。它不会调用 `SessionTitleService.rename(session, exactTitle)`；后者是另一项直接编辑 API，会记录用户来源的标题，并将其钉住以免被自动生成覆盖。
 
@@ -39,7 +39,7 @@
 
 #### 模型看到的内容
 
-主对话模型不会看到命令生命周期或已接受的标题。独立的标题请求从当前 `session.deriveMessages()` 表层开始，因此会与主模型看到的 compaction 结果一致；提供说明时，还会收到跟在这些消息之后、经过 JSON 编码的说明。标题提供方会解析所选模型的 `contextWindow`，预留标题输出、系统提示词和 JSON／消息封装 token，并保留能够放入预算的最大最新完整消息；任何一条消息都不会被剪裁。
+主对话模型不会看到命令生命周期或已接受的标题。独立的标题请求包含当前完整的 `session.deriveMessages()` 表层，因此会与主模型看到的 compaction 结果一致；提供说明时，还会收到跟在这些消息之后、经过 JSON 编码的说明。标题提供方会解析所选模型的 `contextWindow`，并预留标题输出、系统提示词和 JSON／消息封装 token；完整输入无法容纳时，它会在分发前拒绝，而不会丢弃或剪裁任何当前消息。
 
 #### Token 影响
 
@@ -53,3 +53,4 @@
 
 - **说明并非确定性标题**：可选参数会引导提供方，但不强制生成确切文本；直接编辑标题仍是另一项 UI 与服务操作。
 - **完整派生表层是标题输入**：显式 `/rename` 会包括主模型可见的、经过 compaction 的 assistant、user 和 tool 消息。
+- **当前表层过大时拒绝调用**：完整派生表层无法容纳时，应先 compact 会话或配置上下文窗口更大的标题模型。

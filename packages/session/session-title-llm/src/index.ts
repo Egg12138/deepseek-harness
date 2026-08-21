@@ -205,8 +205,12 @@ function resolveRoute(
 }
 
 /** Stable language-aware system instruction shared by both provider plugins. */
-function systemPrompt(config: ResolvedSessionTitleLlmConfig): string {
+function systemPrompt(
+  config: ResolvedSessionTitleLlmConfig,
+  cause: SessionTitleProviderRequest['cause'],
+): string {
   return [
+    ...(cause === 'refresh' ? ['You are a helpful software engineer assistant.'] : []),
     'Create a concise title for an AI coding-assistant session from the supplied human messages.',
     'Return only the title on one line, **in plain text of natural language**, with no quotes, prefix, explanation, Markdown, XML, or terminal control codes. No code is allowed.',
     'Use the language of the messages.',
@@ -229,14 +233,22 @@ function estimateFramedTokens(text: string): number {
   return Math.ceil(Buffer.byteLength(text, 'utf8') / CHARS_PER_TOKEN) + STRUCTURAL_TOKENS
 }
 
-/** Keep the largest newest-message suffix within the route's token budget. */
+/** Keep explicit refresh input complete; bound automatic input to a newest-message suffix. */
 function retainMessages(
   messages: readonly SessionTitleMessage[],
   instruction: string | undefined,
   inputTokenBudget: number,
+  cause: SessionTitleProviderRequest['cause'],
 ): readonly SessionTitleMessage[] {
-  if (estimateFramedTokens(frameMessages(messages, instruction)) <= inputTokenBudget) {
+  const requiredTokens = estimateFramedTokens(frameMessages(messages, instruction))
+  if (requiredTokens <= inputTokenBudget) {
     return messages
+  }
+  if (cause === 'refresh') {
+    throw new Error(
+      `session-title-llm: complete refresh context needs ${requiredTokens} estimated tokens but the title input budget is ${inputTokenBudget}; `
+      + 'compact the session or choose a title model with a larger context window',
+    )
   }
   let low = 0
   let high = messages.length - 1
@@ -306,14 +318,19 @@ export async function generateSessionTitleWithLlm(
   if (contextWindow === undefined) {
     throw new Error(`session-title-llm: model ${route.provider}/${route.model} does not expose contextWindow`)
   }
-  const system = systemPrompt(config)
+  const system = systemPrompt(config, request.cause)
   const inputTokenBudget = contextWindow - config.maxOutputTokens - estimateFramedTokens(system)
   if (inputTokenBudget <= 0) {
     throw new Error(
       `session-title-llm: model ${route.provider}/${route.model} has no token budget after title output and system prompt reservations`,
     )
   }
-  const retainedMessages = retainMessages(selectedMessages, request.instruction, inputTokenBudget)
+  const retainedMessages = retainMessages(
+    selectedMessages,
+    request.instruction,
+    inputTokenBudget,
+    request.cause,
+  )
   const framedInput = frameMessages(retainedMessages, request.instruction)
   const messages: Message[] = [createUserMessage({
     content: [{ type: 'text', text: framedInput }],
